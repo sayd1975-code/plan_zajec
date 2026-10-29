@@ -1,3 +1,4 @@
+
 <!doctype html>
 <html lang="pl">
 <head>
@@ -159,7 +160,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.3.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -198,8 +199,8 @@ function normalize(p){
   if (!p.settings.gapExceptions) p.settings.gapExceptions = "";
   if (p.settings.autBlocks == null) p.settings.autBlocks = true;
   if (!p.settings.pairs) p.settings.pairs = [];
-  p.classes.forEach(function(c){ if (c.rew == null) c.rew = 2; });
-  p.activities.forEach(function(a){ if (a.group == null) a.group = ""; });
+  p.classes.forEach(function(c){ if (c.rew == null) c.rew = rewFromName(c.name); });
+  p.activities.forEach(function(a){ if (a.group == null) a.group = ""; if (a.withClassId == null) a.withClassId = ""; });
   if (!p.placement) p.placement = {};
   return p;
 }
@@ -239,6 +240,10 @@ function guessKind(subject){
   return "dyd";
 }
 function rewTracksOf(c){ var r = c ? parseInt(c.rew, 10) : NaN; return (r >= 1 && r <= 6) ? r : 2; }
+function rewFromName(name){
+  var m = { "3caut":1, "5zet":1, "7aut":1, "8zet":1, "5am":3, "6am":3, "6b":3, "7a":3 };
+  return m[normName(name)] || 2;
+}
 function classClash(lk, ok, lg, og){
   if (lk === "dyd" && ok === "dyd") return !(lg && og && lg !== og);
   if (lk === "dyd" || ok === "dyd") return true;
@@ -807,7 +812,19 @@ function parseImportText(text){
     }
     var mm = /^(.*?)\s*\(([^)]+)\)\s*$/.exec(teacher);
     if (mm){ teacher = mm[1].trim(); short = mm[2].trim(); }
-    if (className){
+    var classNames = [];
+    var status3plus = false;
+    if (className && className.indexOf(",") >= 0){
+      className.split(",").map(function(x){ return x.trim(); }).filter(Boolean).forEach(function(pn){
+        var cn = null;
+        S.classes.forEach(function(c){ if (c.name.toLowerCase() === pn.toLowerCase()) cn = c.name; });
+        if (!cn) S.classes.forEach(function(c){ if (normName(c.name) === normName(pn)) cn = c.name; });
+        classNames.push(cn || pn);
+      });
+      className = classNames.join(" + ");
+      if (classNames.length === 2) noteParts.push("zajęcia łączone: " + className);
+      else if (classNames.length > 2){ noteParts.push("wiele oddziałów (" + classNames.length + ") — połączono " + classNames.slice(0, 2).join(" + ") + ", dopilnuj pozostałych: " + classNames.slice(2).join(", ")); status3plus = true; }
+    } else if (className){
       var canon = null;
       S.classes.forEach(function(c){ if (c.name.toLowerCase() === className.toLowerCase()) canon = c.name; });
       if (!canon) S.classes.forEach(function(c){ if (normName(c.name) === normName(className)) canon = c.name; });
@@ -815,8 +832,10 @@ function parseImportText(text){
     }
     var status = "ok";
     var teacherExists = S.teachers.some(function(t){ return samePerson(t.name, teacher); });
-    var classExists = className !== "" && S.classes.some(function(c){ return c.name.toLowerCase() === className.toLowerCase(); });
-    var dup = teacher && className && subject && S.activities.some(function(a){
+    var classExists = className !== "" && (classNames.length
+      ? classNames.every(function(pn){ return S.classes.some(function(c){ return c.name.toLowerCase() === pn.toLowerCase(); }); })
+      : S.classes.some(function(c){ return c.name.toLowerCase() === className.toLowerCase(); }));
+    var dup = !classNames.length && teacher && className && subject && S.activities.some(function(a){
       var an = tById()[a.teacherId], cn = cById()[a.classId];
       return an && samePerson(an.name, teacher) && cn && cn.name.toLowerCase() === className.toLowerCase() && a.subject.toLowerCase() === subject.toLowerCase() && a.hours === hours;
     });
@@ -834,7 +853,8 @@ function parseImportText(text){
     if (teacher && /\d/.test(teacher)){ status = "err"; noteParts.push("nazwisko nauczyciela zawiera cyfry — śmieciowy wiersz"); }
     if (teacher && !/^WAKAT/i.test(teacher) && !/^[A-ZĄĆĘŁŃÓŚŹŻ]/.test(teacher)){ status = "err"; noteParts.push("nazwa nauczyciela nie wygląda na nazwisko"); }
     if (teacher) lastTeacher = teacher;
-    rows.push({ teacher: teacher, short: short, subject: subject, className: className, hours: hours, kind: guessKind(subject), status: status, note: noteParts.join("; ") || null });
+    if (status3plus && status === "ok") status = "warn";
+    rows.push({ teacher: teacher, short: short, subject: subject, className: className, classNames: classNames, hours: hours, kind: guessKind(subject), status: status, note: noteParts.join("; ") || null });
   }
   return rows;
 }
@@ -1130,6 +1150,10 @@ function renderDane(){
   S.activities.forEach(function(a){
     h += '<div class="act">'
        + '<select class="inp" onchange="setAct(\'' + a.id + '\',\'classId\',this.value)">' + opts(S.classes, a.classId) + "</select>"
+       + '<select class="inp" style="max-width:118px" title="Zajęcia łączone — prowadzone w dwóch klasach naraz (np. religia)" onchange="setAct(\'' + a.id + '\',\'withClassId\',this.value)">'
+       + '<option value=""' + (!a.withClassId ? " selected" : "") + '>— sama klasa —</option>'
+       + S.classes.filter(function(c){ return c.id !== a.classId; }).map(function(c){ return '<option value="' + c.id + '"' + (a.withClassId === c.id ? " selected" : "") + ">" + esc(c.name) + "</option>"; }).join("")
+       + "</select>"
        + '<select class="inp" onchange="setAct(\'' + a.id + '\',\'teacherId\',this.value)">' + opts(S.teachers, a.teacherId) + "</select>"
        + '<input class="inp" placeholder="przedmiot" value="' + esc(a.subject) + '" onchange="setAct(\'' + a.id + '\',\'subject\',this.value)">'
        + '<select class="inp" style="max-width:150px" title="Rodzaj zajęć" onchange="setAct(\'' + a.id + '\',\'kind\',this.value)">'
@@ -1141,7 +1165,7 @@ function renderDane(){
        + '<input class="inp" type="number" min="1" max="20" style="text-align:center" value="' + a.hours + '" onchange="setAct(\'' + a.id + '\',\'hours\',this.value)">'
        + '<button class="del" onclick="delAct(\'' + a.id + '\')">✕</button></div>';
   });
-  h += '<button class="btn2" onclick="addAct()">+ Dodaj zajęcia</button> <span class="hint">Godziny = liczba lekcji tygodniowo.</span></div></div>';
+  h += '<button class="btn2" onclick="addAct()">+ Dodaj zajęcia</button> <span class="hint">Godziny = liczba lekcji tygodniowo. Zajęcia łączone (druga klasa) chodzą jednocześnie w obu oddziałach.</span></div></div>';
   h += '<div class="card"><div class="hd">📥 Import przydziałów nauczycieli — wklej z Worda/Excela, bez klepania</div><div class="bd">';
   h += '<p class="hint">Rozpoznaję kolumny <b>Nauczyciel · Przedmiot · Klasa · Godziny</b> w dowolnej kolejności (godziny i klasę wykrywam sam). Rozpoznaję szkolne nazwy oddziałów (np. 5aM, 7z, „1a aut."). Scalone komórki Worda działają. Pliki <b>.docx</b> (Word) i <b>.xlsx</b> (Excel) wczytuję bezpośrednio — czytam tabele i arkusze; stary .doc wklej przez <b>Ctrl+V</b> albo zapisz jako .txt/.docx. Skrót nauczyciela możesz podać w nawiasie: Kowalska Anna (Kow).</p>';
   h += '<div class="row"><input type="file" class="file" id="importFile" accept=".txt,.csv,.tsv,.docx,.xlsx" onchange="importFileRead(this)"><button class="btn" onclick="analyze()">🔍 Analizuj</button></div>';
@@ -1181,7 +1205,7 @@ function addClass(){
 }
 function renClass(id, v){ S.classes.forEach(function(c){ if (c.id === id) c.name = v; }); save(); render(); }
 function delClass(id){
-  if (S.activities.some(function(a){ return a.classId === id; })){ flash("Nie można usunąć — klasa ma zajęcia. Najpierw usuń te zajęcia.", "err"); return; }
+  if (S.activities.some(function(a){ return a.classId === id || a.withClassId === id; })){ flash("Nie można usunąć — klasa ma zajęcia (także łączone z inną klasą). Najpierw usuń te zajęcia.", "err"); return; }
   S.classes = S.classes.filter(function(c){ return c.id !== id; });
   if (viewMode === "class" && viewSel === id) viewSel = "";
   save(); render();
@@ -1211,6 +1235,7 @@ function setAct(id, key, val){
   if (key === "hours") a.hours = Math.max(1, Math.min(20, parseInt(val) || 1));
   else if (key === "kind") a.kind = (val === "rew" || val === "swietl") ? val : "dyd";
   else if (key === "group") a.group = (val || "").trim();
+  else if (key === "withClassId") a.withClassId = (val && val !== a.classId) ? val : "";
   else a[key] = val;
   prunePlacement(); save(); render();
 }
@@ -1235,18 +1260,24 @@ function doImport(){
   if (!rows.length){ flash("Brak wierszy do zaimportowania.", "err"); return; }
   var hoursSum = rows.reduce(function(acc, r){ return acc + (r.hours || 1); }, 0);
   if (hoursSum > 1200){ flash("⛔ Suma godzin do zaimportowania = " + hoursSum + ". To wygląda na zły plik lub tabele podsumowujące (realnie szkoła ma ok. 700). Import przerwany.", "err"); return; }
-  var addedT = 0, addedC = 0;
+  var addedT = 0, addedC = 0, mergedN = 0;
   rows.forEach(function(r){
     var t = null;
     S.teachers.forEach(function(x){ if (!t && samePerson(x.name, r.teacher)) t = x; });
     if (!t){ t = { id: nextId(S.teachers, "t"), name: r.teacher, short: r.short || r.teacher.split(/\s+/).slice(-1)[0].slice(0, 3), unavail: [] }; S.teachers.push(t); addedT++; }
-    var c = null;
-    S.classes.forEach(function(x){ if (!c && x.name.toLowerCase() === r.className.toLowerCase()) c = x; });
-    if (!c){ c = { id: nextId(S.classes, "c"), name: r.className }; S.classes.push(c); addedC++; }
-    S.activities.push({ id: nextId(S.activities, "a"), classId: c.id, teacherId: t.id, subject: r.subject, hours: r.hours, kind: r.kind || guessKind(r.subject), group: "" });
+    var names = (r.classNames && r.classNames.length ? r.classNames : [r.className]);
+    var clsIds = [];
+    names.forEach(function(nm){
+      var c = null;
+      S.classes.forEach(function(x){ if (!c && x.name.toLowerCase() === nm.toLowerCase()) c = x; });
+      if (!c){ c = { id: nextId(S.classes, "c"), name: nm, rew: rewFromName(nm) }; S.classes.push(c); addedC++; }
+      clsIds.push(c.id);
+    });
+    if (clsIds.length > 1) mergedN++;
+    S.activities.push({ id: nextId(S.activities, "a"), classId: clsIds[0], withClassId: clsIds[1] || "", teacherId: t.id, subject: r.subject, hours: r.hours, kind: r.kind || guessKind(r.subject), group: "" });
   });
   importRows = null; importText = ""; save(); render();
-  flash("✅ Zaimportowano " + rows.length + " przydziałów (+" + addedT + " nauczycieli, +" + addedC + " klas). Wygeneruj plan albo dokładaj ręcznie.", "ok");
+  flash("✅ Zaimportowano " + rows.length + " przydziałów (+" + addedT + " nauczycieli, +" + addedC + " klas" + (mergedN ? ", " + mergedN + " zajęć łączonych" : "") + "). Wygeneruj plan albo dokładaj ręcznie.", "ok");
 }
 
 /* ---------- zakładka OGRANICZENIA ---------- */
@@ -1276,6 +1307,11 @@ function setLimit(k, v){
 function setRew(cid, v){
   var c = null; S.classes.forEach(function(x){ if (x.id === cid) c = x; });
   if (c){ var r = parseInt(v, 10); if (!(r >= 1 && r <= 6)) r = 2; c.rew = r; save(); render(); }
+}
+function applyRewWytyczne(){
+  S.classes.forEach(function(c){ c.rew = rewFromName(c.name); });
+  save(); render();
+  flash("✅ Tory ustawione wg wytycznych (rozpoznane po nazwach oddziałów). Możesz teraz zmienić każdą klasę osobno.", "ok");
 }
 function setChk(k, v){ S.settings[k] = !!v; save(); render(); }
 function setMaxGaps(v){ S.settings.maxGaps = Math.max(0, Math.min(20, parseInt(v) || 0)); save(); render(); }
@@ -1325,7 +1361,7 @@ function renderOgr(){
      + '<label class="lbl" style="margin-left:14px">Maks. lekcji klasy dziennie:</label><input class="inp" type="number" style="width:70px" value="' + S.settings.classMaxPerDay + '" onchange="setLimit(\'classMaxPerDay\',this.value)">'
      + '</div><p class="hint">Zmiana limitów obowiązuje przy kolejnym generowaniu i ruchach ręcznych.</p></div></div>';
   h += '<div class="card"><div class="hd">🚻 Tory rewalidacji — ile zajęć równolegle w klasie</div><div class="bd">';
-  h += '<p class="hint">Rewalidacje mogą się nakładać w jednej klasie, ale nie więcej niż liczba torów (1–6). Zajęcia dydaktyczne nie łączą się z niczym — chyba że dotyczą różnych grup (kolumna „grupa" w Dane).</p>';
+  h += '<p class="hint">Rewalidacje mogą się nakładać w jednej klasie, ale nie więcej niż liczba torów (1–6). Nowe oddziały dostają tory rozpoznane po nazwie wg wytycznych (jednotorowo: 3c AUT, 5 ZET, 7 AUT, 8 ZET; trzytorowo: 5a M, 6a M, 6b, 7a; pozostałe dwutorowo). Zajęcia dydaktyczne nie łączą się z niczym — chyba że dotyczą różnych grup (kolumna „grupa" w Dane).</p>';
   if (!S.classes.length) h += '<p class="hint">Brak oddziałów — dodaj je w zakładce Dane.</p>';
   S.classes.forEach(function(c){
     var tr = rewTracksOf(c);
@@ -1335,6 +1371,7 @@ function renderOgr(){
     for (var tw = 1; tw <= 6; tw++) h += '<option value="' + tw + '"' + (tr === tw ? " selected" : "") + '>' + lbl[tw - 1] + '</option>';
     h += "</select></div>";
   });
+  h += '<div class="row"><button class="btn2" onclick="applyRewWytyczne()">↩ Przywróć wartości z wytycznych</button><span class="hint" style="margin:0">ustawia tory wg nazw oddziałów (możesz potem zmienić każdą klasę osobno)</span></div>';
   h += '</div></div>';
   h += '<div class="card"><div class="hd">📏 Zasady planu (wg wytycznych)</div><div class="bd">';
   h += '<div class="row"><label style="display:flex;gap:7px;align-items:center;cursor:pointer"><input type="checkbox"' + (S.settings.friMax7 ? " checked" : "") + ' onchange="setChk(\'friMax7\',this.checked)"> <span>Piątek: maksymalnie 7 lekcji (8. zablokowana)</span></label></div>';
@@ -1462,7 +1499,7 @@ function renderPlan(){
       relC.forEach(function(L){
         h += '<div class="chip c' + colorIdx(L.subject) + (sel === L.id ? " sel" : "") + '" onclick="event.stopPropagation();chipClick(\'' + L.id + '\')" oncontextmenu="unassign(\'' + L.id + '\',event)" title="' + esc(L.subject) + " — prawy klik usuwa z planu\">"
            + '<span class="subj">' + esc(L.subject) + "</span>"
-           + '<span class="sub">' + esc(viewMode === "class" ? tShort(L.teacherId) : cName(L.classIds[0])) + "</span></div>";
+           + '<span class="sub">' + esc(viewMode === "class" ? tShort(L.teacherId) : L.classIds.map(cName).join("+")) + "</span></div>";
       });
       h += "</td>";
     }
@@ -1487,7 +1524,7 @@ function planText(kind, id, bySlot){
     for (var d = 0; d < 5; d++){
       var s = d * NH + h2;
       var rel = (bySlot[s] || []).filter(function(x){ return kind === "class" ? x.classIds.indexOf(id) >= 0 : x.teacherId === id; });
-      var cell = rel.map(function(L){ return abbr(L.subject) + " " + (kind === "class" ? tShort(L.teacherId) : abbr(cName(L.classIds[0]))); }).join(" / ");
+      var cell = rel.map(function(L){ return abbr(L.subject) + " " + (kind === "class" ? tShort(L.teacherId) : L.classIds.map(function(x){ return abbr(cName(x)); }).join("+")); }).join(" / ");
       row += pad(rel.length ? cell : "—", 16);
     }
     rows.push(row);
