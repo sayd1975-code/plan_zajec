@@ -1,5 +1,5 @@
 /* Plan Zajęć — service worker (wersjonowanie jak w Kalkulatorze PCD) */
-const CACHE_NAME = "plan-zajec-v2";
+const CACHE_NAME = "plan-zajec-v3";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon.svg"];
 
 self.addEventListener("install", (e) => {

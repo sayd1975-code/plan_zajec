@@ -160,7 +160,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 2.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 3.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -410,7 +410,7 @@ function parseImportText(text){
   }
   for (var li = 0; li < lines.length; li++){
     var raw = lines[li], low = raw.toLowerCase();
-    if (rows.length === 0 && low.indexOf("nauczyciel") >= 0 && (low.indexOf("przedmiot") >= 0 || low.indexOf("klasa") >= 0 || low.indexOf("godzin") >= 0)) continue;
+    if (low.indexOf("nauczyciel") >= 0 && (low.indexOf("przedmiot") >= 0 || low.indexOf("klasa") >= 0 || low.indexOf("godzin") >= 0)) continue;
     var line = raw.replace(/^\s*(\d{1,3}[.)]\s+|[-•*·–—]\s*)/, "").trim();
     var parts = line.indexOf("\t") >= 0 ? line.split("\t") : line.indexOf(";") >= 0 ? line.split(";") : line.indexOf(",") >= 0 ? line.split(",") : null;
     if (!parts){
@@ -445,7 +445,7 @@ function parseImportText(text){
       className = rest[classIdx].replace(/^klasa\s+/i, "").trim();
       rest = rest.filter(function(_, idx){ return idx !== classIdx; });
     } else noteParts.push("nie rozpoznano klasy");
-    var teacher = "", short, subject = "";
+    var teacher = "", short = null, subject = "";
     var teacherIdx = -1;
     for (var ti = 0; ti < rest.length; ti++){
       var found = S.teachers.some(function(t){ return samePerson(t.name, rest[ti]); });
@@ -483,6 +483,222 @@ function parseImportText(text){
     rows.push({ teacher: teacher, short: short, subject: subject, className: className, hours: hours, status: status, note: noteParts.join("; ") || null });
   }
   return rows;
+}
+
+/* ==================== czytnik plików .docx/.xlsx (ZIP+DEFLATE, bez zależności) ==================== */
+function inflateRaw(data){
+  var out = new Uint8Array(1 << 16), outLen = 0;
+  function push(b){ if (outLen === out.length){ var n = new Uint8Array(out.length * 2); n.set(out); out = n; } out[outLen++] = b; }
+  var bits = 0, nbits = 0, pos = 0;
+  function getbit(){
+    if (nbits === 0){
+      if (pos >= data.length) throw new Error("niespodziewany koniec danych");
+      bits = data[pos++]; nbits = 8;
+    }
+    var b = bits & 1; bits >>= 1; nbits--; return b;
+  }
+  function getbits(n){ var v = 0; for (var i = 0; i < n; i++) v |= getbit() << i; return v; }
+  function buildHuff(lengths){
+    var maxl = 0;
+    for (var i = 0; i < lengths.length; i++) if (lengths[i] > maxl) maxl = lengths[i];
+    var count = [0]; for (var j = 1; j <= 15; j++) count[j] = 0;
+    for (i = 0; i < lengths.length; i++) count[lengths[i]]++;
+    count[0] = 0;
+    var offs = [0]; for (j = 1; j <= 15; j++) offs[j] = offs[j - 1] + count[j - 1];
+    var symbol = new Array(lengths.length);
+    for (i = 0; i < lengths.length; i++) if (lengths[i]) symbol[offs[lengths[i]]++] = i;
+    return { count: count, symbol: symbol, maxl: maxl };
+  }
+  function decodeSym(h){
+    var code = 0, first = 0, index = 0, len, cnt;
+    for (len = 1; len <= 15; len++){
+      code |= getbit();
+      cnt = h.count[len];
+      if (code - first < cnt) return h.symbol[index + (code - first)];
+      index += cnt; first += cnt; first <<= 1; code <<= 1;
+    }
+    throw new Error("błąd kodu Huffmana");
+  }
+  var LBASE = [3,4,5,6,7,8,9,10,11,13,15,17,19,23,27,31,35,43,51,59,67,83,99,115,131,163,195,227,258];
+  var LEXTRA = [0,0,0,0,0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4,5,5,5,5,0];
+  var DBASE = [1,2,3,4,5,7,9,13,17,25,33,49,65,97,129,193,257,385,513,769,1025,1537,2049,3073,4097,6145,8193,12289,16385,24577];
+  var DEXTRA = [0,0,0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13];
+  for(;;){
+    var bfinal = getbit(), btype = getbits(2), huffL, huffD, lens, i, j;
+    if (btype === 0){
+      nbits = 0;
+      var len = data[pos] | (data[pos + 1] << 8); pos += 4;
+      for (i = 0; i < len; i++){
+        if (pos >= data.length) throw new Error("niespodziewany koniec danych");
+        push(data[pos++]);
+      }
+    } else {
+      if (btype === 1){
+        lens = [];
+        for (i = 0; i < 144; i++) lens.push(8);
+        for (; i < 256; i++) lens.push(9);
+        for (; i < 280; i++) lens.push(7);
+        for (; i < 288; i++) lens.push(8);
+        huffL = buildHuff(lens);
+        var dl = []; for (i = 0; i < 30; i++) dl.push(5); huffD = buildHuff(dl);
+      } else if (btype === 2){
+        var hlit = getbits(5) + 257, hdist = getbits(5) + 1, hclen = getbits(4) + 4;
+        var order = [16,17,18,0,8,7,9,6,10,5,11,4,12,3,13,2,14,1,15];
+        var clens = []; for (i = 0; i < 19; i++) clens.push(0);
+        for (i = 0; i < hclen; i++) clens[order[i]] = getbits(3);
+        var huffC = buildHuff(clens);
+        lens = [];
+        while (lens.length < hlit + hdist){
+          var sym = decodeSym(huffC);
+          if (sym < 16) lens.push(sym);
+          else if (sym === 16){ var prev = lens[lens.length - 1]; var rep1 = 3 + getbits(2); for (j = 0; j < rep1; j++) lens.push(prev); }
+          else if (sym === 17){ var rep2 = 3 + getbits(3); for (j = 0; j < rep2; j++) lens.push(0); }
+          else { var rep3 = 11 + getbits(7); for (j = 0; j < rep3; j++) lens.push(0); }
+        }
+        if (lens.length > hlit + hdist) lens = lens.slice(0, hlit + hdist);
+        huffL = buildHuff(lens.slice(0, hlit));
+        var dl2 = lens.slice(hlit);
+        if (dl2.length === 1 && dl2[0] === 0) dl2[0] = 1;
+        huffD = buildHuff(dl2);
+      } else throw new Error("zły typ bloku");
+      for(;;){
+        var s2 = decodeSym(huffL);
+        if (s2 < 256) push(s2);
+        else if (s2 === 256) break;
+        else {
+          var li = s2 - 257;
+          var len2 = LBASE[li] + (LEXTRA[li] ? getbits(LEXTRA[li]) : 0);
+          var ds = decodeSym(huffD);
+          var d2 = DBASE[ds] + (DEXTRA[ds] ? getbits(DEXTRA[ds]) : 0);
+          for (i = 0; i < len2; i++) push(out[outLen - d2]);
+        }
+      }
+    }
+    if (bfinal) break;
+  }
+  return out.subarray(0, outLen);
+}
+function zipRead(buf){
+  var u8 = buf instanceof Uint8Array ? new Uint8Array(buf) : new Uint8Array(buf);
+  var dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  var eocd = -1;
+  for (var i = u8.length - 22; i >= Math.max(0, u8.length - 22 - 65536); i--){
+    if (u8[i] === 0x50 && u8[i + 1] === 0x4b && u8[i + 2] === 0x05 && u8[i + 3] === 0x06){ eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error("plik nie ma struktury ZIP (to nie .docx/.xlsx?)");
+  var n = dv.getUint16(eocd + 10, true);
+  var p = dv.getUint32(eocd + 16, true);
+  var td = new TextDecoder("utf-8");
+  var files = {};
+  for (var e = 0; e < n; e++){
+    if (dv.getUint32(p, true) !== 0x02014b50) throw new Error("uszkodzone archiwum ZIP");
+    var method = dv.getUint16(p + 10, true);
+    var csize = dv.getUint32(p + 20, true);
+    var nameLen = dv.getUint16(p + 28, true), extraLen = dv.getUint16(p + 30, true), commentLen = dv.getUint16(p + 32, true);
+    var lho = dv.getUint32(p + 42, true);
+    var name = td.decode(u8.subarray(p + 46, p + 46 + nameLen));
+    var lNameLen = dv.getUint16(lho + 26, true), lExtraLen = dv.getUint16(lho + 28, true);
+    var dataStart = lho + 30 + lNameLen + lExtraLen;
+    var cdata = u8.subarray(dataStart, dataStart + csize);
+    files[name] = method === 0 ? cdata : inflateRaw(cdata);
+    p += 46 + nameLen + extraLen + commentLen;
+  }
+  return files;
+}
+function xmlUnescape(s){
+  return s.replace(/&#x([0-9a-fA-F]+);/g, function(_, h){ return String.fromCharCode(parseInt(h, 16)); })
+          .replace(/&#(\d+);/g, function(_, d){ return String.fromCharCode(+d); })
+          .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+}
+function docxToTsv(files){
+  var x = files["word/document.xml"] ? xmlUnescape(new TextDecoder("utf-8").decode(files["word/document.xml"])) : "";
+  var out = [];
+  x.replace(/<w:tbl(?:\s[^>]*)?>([\s\S]*?)<\/w:tbl>/g, function(_, tbl){
+    tbl.replace(/<w:tr(?:\s[^>]*)?>([\s\S]*?)<\/w:tr>/g, function(_2, tr){
+      var cells = [];
+      tr.replace(/<w:tc(?:\s[^>]*)?>([\s\S]*?)<\/w:tc>/g, function(_3, tc){
+        var t = "";
+        tc.replace(/<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/g, function(_4, tx){ t += tx; return _4; });
+        cells.push(t);
+        return _3;
+      });
+      out.push(cells.join("\t"));
+      return _2;
+    });
+    return _;
+  });
+  return out.join("\n");
+}
+function xlsxToTsv(files){
+  function txt(u8){ return xmlUnescape(new TextDecoder("utf-8").decode(u8)); }
+  var ss = [];
+  if (files["xl/sharedStrings.xml"]){
+    txt(files["xl/sharedStrings.xml"]).replace(/<si(?:\s[^>]*)?>([\s\S]*?)<\/si>/g, function(_, inner){
+      var t = "";
+      inner.replace(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g, function(_2, tx){ t += tx; return _2; });
+      ss.push(t);
+      return _;
+    });
+  }
+  var wb = files["xl/workbook.xml"] ? txt(files["xl/workbook.xml"]) : "";
+  var rels = files["xl/_rels/workbook.xml.rels"] ? txt(files["xl/_rels/workbook.xml.rels"]) : "";
+  var relMap = {};
+  rels.replace(/<Relationship[^>]*>/g, function(m){
+    var id = /Id="([^"]+)"/.exec(m), tg = /Target="([^"]+)"/.exec(m);
+    if (id && tg) relMap[id[1]] = tg[1].replace(/^\//, "");
+    return m;
+  });
+  var sheets = [];
+  wb.replace(/<sheet[^>]*\/?>/g, function(m){
+    var rid = /r:id="([^"]+)"/.exec(m);
+    if (rid && relMap[rid[1]]) sheets.push("xl/" + relMap[rid[1]]);
+    return m;
+  });
+  if (!sheets.length) sheets = Object.keys(files).filter(function(k){ return /^xl\/worksheets\/.*\.xml$/.test(k); }).sort();
+  var out = [];
+  sheets.forEach(function(path){
+    if (!files[path]) return;
+    txt(files[path]).replace(/<row(?:\s[^>]*)?>([\s\S]*?)<\/row>/g, function(_, inner){
+      var cells = [];
+      inner.replace(/<c\s([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g, function(m2, attrs, content){
+        var rref = /r="([A-Z]+)\d+"/.exec(attrs);
+        var col = 0;
+        if (rref){ var letters = rref[1]; for (var li = 0; li < letters.length; li++) col = col * 26 + (letters.charCodeAt(li) - 64); col--; }
+        while (cells.length < col) cells.push("");
+        var val = "";
+        var t = /t="([^"]+)"/.exec(attrs);
+        if (content){
+          if (t && t[1] === "inlineStr"){ content.replace(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g, function(_2, tx){ val += tx; return _2; }); }
+          else {
+            var vm = /<v>([\s\S]*?)<\/v>/.exec(content);
+            if (vm) val = (t && t[1] === "s") ? (ss[parseInt(vm[1], 10)] || "") : vm[1];
+          }
+        }
+        cells[col] = val;
+        return m2;
+      });
+      out.push(cells.join("\t"));
+      return _;
+    });
+  });
+  return out.join("\n");
+}
+function importFileRead(input){
+  var f = input.files && input.files[0]; if (!f) return;
+  f.arrayBuffer().then(function(buf){
+    var name = f.name.toLowerCase();
+    try{
+      if (name.slice(-5) === ".docx") importText = docxToTsv(zipRead(buf));
+      else if (name.slice(-5) === ".xlsx") importText = xlsxToTsv(zipRead(buf));
+      else importText = new TextDecoder("utf-8").decode(buf).replace(/^\uFEFF/, "");
+      if (!importText.trim()) flash("Plik wygląda na pusty.", "warn");
+      render();
+    }catch(err){
+      importText = "";
+      render();
+      flash("Nie uda\u0142o si\u0119 odczyta\u0107 pliku " + f.name + " (" + err.message + "). Wklej dane przez Ctrl+V albo zapisz jako .txt/.csv.", "err");
+    }
+  });
 }
 
 /* ==================== komunikaty ==================== */
@@ -564,8 +780,8 @@ function renderDane(){
   });
   h += '<button class="btn2" onclick="addAct()">+ Dodaj zajęcia</button> <span class="hint">Godziny = liczba lekcji tygodniowo.</span></div></div>';
   h += '<div class="card"><div class="hd">📥 Import przydziałów nauczycieli — wklej z Worda/Excela, bez klepania</div><div class="bd">';
-  h += '<p class="hint">Rozpoznaję kolumny <b>Nauczyciel · Przedmiot · Klasa · Godziny</b> w dowolnej kolejności (godziny i klasę wykrywam sam). Rozpoznaję szkolne nazwy oddziałów (np. 5aM, 7z, „1a aut."). Scalone komórki Worda działają. Plik <b>.docx</b> nie zostanie odczytany — zaznacz tabelę w Wordzie i wklej przez <b>Ctrl+V</b>, albo zapisz jako „zwykły tekst (.txt)" i wczytaj plik. Skrót nauczyciela możesz podać w nawiasie: Kowalska Anna (Kow).</p>';
-  h += '<div class="row"><input type="file" class="file" id="importFile" accept=".txt,.csv,.tsv" onchange="importFileRead(this)"><button class="btn" onclick="analyze()">🔍 Analizuj</button></div>';
+  h += '<p class="hint">Rozpoznaję kolumny <b>Nauczyciel · Przedmiot · Klasa · Godziny</b> w dowolnej kolejności (godziny i klasę wykrywam sam). Rozpoznaję szkolne nazwy oddziałów (np. 5aM, 7z, „1a aut."). Scalone komórki Worda działają. Pliki <b>.docx</b> (Word) i <b>.xlsx</b> (Excel) wczytuję bezpośrednio — czytam tabele i arkusze; stary .doc wklej przez <b>Ctrl+V</b> albo zapisz jako .txt/.docx. Skrót nauczyciela możesz podać w nawiasie: Kowalska Anna (Kow).</p>';
+  h += '<div class="row"><input type="file" class="file" id="importFile" accept=".txt,.csv,.tsv,.docx,.xlsx" onchange="importFileRead(this)"><button class="btn" onclick="analyze()">🔍 Analizuj</button></div>';
   h += '<textarea id="importText" class="inp ta" rows="6" placeholder="np. wklejone z Worda (tabulatory):&#10;Kowalska Anna\tEdukacja wczesnoszkolna\t1a\t15&#10;\tRewalidacja\t1a\t2&#10;Lis Barbara\tJ. polski\t3a\t5">' + esc(importText) + "</textarea>";
   if (importRows){
     var okN = importRows.filter(function(r){ return r.status !== "err"; }).length;
@@ -637,16 +853,10 @@ function delAct(id){
   Object.keys(S.placement).forEach(function(k){ if (k.indexOf(id + "-") === 0) delete S.placement[k]; });
   save(); render();
 }
-function importFileRead(input){
-  var f = input.files && input.files[0]; if (!f) return;
-  var fr = new FileReader();
-  fr.onload = function(){ importText = String(fr.result || ""); render(); };
-  fr.readAsText(f, "UTF-8");
-}
 function analyze(){
   var ta = document.getElementById("importText");
   importText = ta ? ta.value : importText;
-  if (!importText.trim()){ flash("Wklej dane do okienka albo wczytaj plik .txt/.csv.", "warn"); return; }
+  if (!importText.trim()){ flash("Wklej dane do okienka albo wczytaj plik (.txt, .csv, .docx, .xlsx).", "warn"); return; }
   importRows = parseImportText(importText);
   render();
   var okN = importRows.filter(function(r){ return r.status !== "err"; }).length, erN = importRows.length - okN;
@@ -892,32 +1102,3 @@ function copyEks(){
   } else fallback();
 }
 function renderEks(){
-  var h = '<div class="card"><div class="hd"><span>🖨️ Eksport planów</span><button class="btn" onclick="copyEks()">📋 Kopiuj</button></div><div class="bd">';
-  h += '<div class="row">'
-     + '<button class="btn2' + (eksMode === "klasy" ? " on" : "") + '" onclick="eksModeSet(\'klasy\')">Plany klas</button>'
-     + '<button class="btn2' + (eksMode === "nauczyciele" ? " on" : "") + '" onclick="eksModeSet(\'nauczyciele\')">Plany nauczycieli</button>'
-     + '<button class="btn2' + (eksMode === "csv" ? " on" : "") + '" onclick="eksModeSet(\'csv\')">CSV (Excel)</button>'
-     + "</div>";
-  h += '<textarea id="eksText" class="inp ta big" readonly>' + esc(eksText()) + "</textarea>";
-  h += '<p class="hint">' + (eksMode === "csv" ? "CSV ze średnikami — Excel otworzy w kolumnach (jeśli nie, użyj Dane → Tekst jako kolumny)." : "Tekst o stałej szerokości kolumn — wklejasz do Worda/Excela/maila. Skróty przedmiotów z pierwszych liter.") + "</p>";
-  h += "</div></div>";
-  return h;
-}
-
-/* ==================== start ==================== */
-var firstRun = false;
-try{ if (!localStorage.getItem(LS)) firstRun = true; }catch(e){ firstRun = true; }
-S = loadState();
-if (firstRun) save();
-var themeBtnEl = document.getElementById("themeBtn");
-if (themeBtnEl) themeBtnEl.onclick = cycleTheme;
-applyTheme();
-if (window.matchMedia){ try{ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function(){ if (themeMode() === "auto") applyTheme(); }); }catch(e){} }
-render();
-if (firstRun) flash("Witaj! 👋 Wczytano nazwy oddziałów SPS nr 7. W zakładce 📋 Dane dodaj nauczycieli i wklej przydziały — dane zostaną wyłącznie u Ciebie.", "ok");
-if ("serviceWorker" in navigator && location.protocol === "https:"){
-  try{ navigator.serviceWorker.register("sw.js").catch(function(){}); }catch(e){}
-}
-</script>
-</body>
-</html>
