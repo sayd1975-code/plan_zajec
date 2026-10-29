@@ -1,0 +1,842 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plan Zajęć — SPS nr 7</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#d97706">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,"Segoe UI",Roboto,sans-serif;background:#f8fafc;color:#1e293b}
+header{background:linear-gradient(90deg,#d97706,#ea580c,#d97706);color:#fff}
+.hwrap{max-width:1100px;margin:0 auto;padding:12px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+h1{font-size:20px;margin:0}
+.hwrap .sub{margin:2px 0 0;font-size:12px;color:#fef3c7}
+#badge span{display:inline-block;font-size:12px;font-weight:700;border-radius:999px;padding:4px 10px}
+#badge .okb{background:#10b981;color:#fff}
+#badge .errb{background:#ef4444;color:#fff}
+#tabs{max-width:1100px;margin:0 auto;padding:0 8px;display:flex;gap:4px;flex-wrap:wrap}
+.tab{border:0;background:rgba(255,255,255,.18);color:#fff;padding:9px 14px;border-radius:10px 10px 0 0;font-weight:600;font-size:14px;cursor:pointer}
+.tab.on{background:#f8fafc;color:#b45309}
+#msg{max-width:1100px;margin:10px auto 0;padding:0 12px;display:none}
+#msg .inner{padding:10px 14px;border-radius:10px;font-size:14px;font-weight:500}
+#msg.ok .inner{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}
+#msg.err .inner{background:#fff1f2;border:1px solid #fecaca;color:#b91c1c}
+#msg.warn .inner{background:#fffbeb;border:1px solid #fde68a;color:#b45309}
+main{max-width:1100px;margin:12px auto 24px;padding:0 12px}
+footer{max-width:1100px;margin:0 auto;padding:0 12px 18px;text-align:center;font-size:11px;color:#94a3b8}
+.card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;margin-bottom:14px;overflow:hidden}
+.card>.hd{padding:10px 14px;background:#f8fafc;border-bottom:1px solid #f1f5f9;font-weight:600;font-size:14px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.card>.bd{padding:12px 14px}
+input,select,textarea,button{font:inherit}
+.inp{border:1px solid #cbd5e1;border-radius:8px;padding:7px 9px;font-size:14px;background:#fff;min-width:0}
+.inp:focus{outline:2px solid #fbbf24}
+.btn{background:#f59e0b;color:#fff;border:0;border-radius:10px;padding:9px 14px;font-weight:700;font-size:14px;cursor:pointer}
+.btn:hover{background:#d97706}
+.btn2{background:#fff;color:#334155;border:1px solid #cbd5e1;border-radius:10px;padding:8px 12px;font-size:14px;font-weight:600;cursor:pointer}
+.btn2:hover{background:#f1f5f9}
+.btn2.on{background:#f59e0b;color:#fff;border-color:#f59e0b}
+.del{border:0;background:0;color:#ef4444;font-size:15px;cursor:pointer;padding:4px 6px}
+.row{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+.badge{font-size:11px;font-weight:700;background:#fffbeb;border:1px solid #fde68a;color:#b45309;border-radius:999px;padding:2px 8px;white-space:nowrap}
+.badge.ok{background:#ecfdf5;border-color:#a7f3d0;color:#065f46}
+.badge.err{background:#fff1f2;border-color:#fecaca;color:#b91c1c}
+.grid2{display:grid;gap:14px;grid-template-columns:1fr}
+@media(min-width:800px){.grid2{grid-template-columns:1fr 1fr}}
+.act{display:grid;grid-template-columns:1fr 1.3fr 1.7fr 64px 34px;gap:8px;align-items:center;margin-bottom:8px}
+.hint{font-size:11px;color:#94a3b8;margin:6px 0}
+.lbl{font-size:13px;color:#475569}
+.ta{width:100%;font-family:ui-monospace,Consolas,monospace;font-size:12px;padding:8px}
+.ta.big{height:300px}
+.file{font-size:12px;color:#64748b;max-width:100%}
+table.plan{border-collapse:collapse;min-width:940px}
+table.plan th{font-size:11px;font-weight:700;color:#64748b;padding:3px 4px;background:#f8fafc;border:1px solid #e2e8f0}
+table.plan td{border:1px solid #e2e8f0;background:#fff;padding:2px;vertical-align:top;height:52px;min-width:104px;cursor:pointer}
+table.plan td:hover{background:#fffbeb}
+table.plan td.day{cursor:default;font-size:12px;font-weight:600;color:#475569;padding:4px 6px;white-space:nowrap;background:#f8fafc;min-width:90px}
+.sub{font-weight:500;font-size:10px;color:#94a3b8}
+.sub.err{color:#ef4444}
+.chip{border:1px solid;border-radius:6px;padding:2px 4px;font-size:11px;font-weight:600;line-height:1.2}
+.chip .subj{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip.sel{box-shadow:0 0 0 3px #2563eb}
+button.chip{cursor:pointer}
+.c0{background:#fef3c7;border-color:#fcd34d;color:#78350f}
+.c1{background:#e0f2fe;border-color:#7dd3fc;color:#075985}
+.c2{background:#d1fae5;border-color:#6ee7b7;color:#065f46}
+.c3{background:#ede9fe;border-color:#c4b5fd;color:#5b21b6}
+.c4{background:#ffe4e6;border-color:#fda4af;color:#9f1239}
+.c5{background:#ecfccb;border-color:#d9f99d;color:#3f6212}
+.c6{background:#ffedd5;border-color:#fdba74;color:#9a3412}
+.c7{background:#cffafe;border-color:#67e8f9;color:#155e75}
+.c8{background:#fae8ff;border-color:#f0abfc;color:#86198f}
+.c9{background:#ccfbf1;border-color:#5eead4;color:#134e4a}
+.unplaced{background:#fff1f2;border:1px solid #fecaca;border-radius:12px;padding:10px 12px;margin-bottom:12px;font-size:13px}
+.unplaced>div{margin-top:6px}
+.unplaced .chip{display:inline-block;margin:2px}
+table.unav{border-collapse:collapse}
+table.unav th{font-size:11px;color:#64748b;padding:3px 6px;font-weight:700}
+table.unav td{padding:2px}
+table.unav td.day{font-size:12px;font-weight:600;color:#475569;padding-right:6px;white-space:nowrap}
+.uon{width:40px;height:34px;border-radius:8px;border:1px solid #6ee7b7;background:#ecfdf5;color:#059669;font-weight:700;cursor:pointer;font-size:12px}
+.uoff{width:40px;height:34px;border-radius:8px;border:1px solid #fca5a5;background:#fee2e2;color:#b91c1c;font-weight:700;cursor:pointer;font-size:12px}
+.prevtbl{max-height:230px;overflow:auto;border:1px solid #e2e8f0;border-radius:10px;margin-top:8px}
+.prevtbl table{width:100%;border-collapse:collapse;font-size:12px}
+.prevtbl th{position:sticky;top:0;background:#f1f5f9;text-align:left;padding:5px 8px;font-size:11px}
+.prevtbl td{padding:4px 8px;border-top:1px solid #f1f5f9}
+tr.rer{background:#fff1f2;color:#b91c1c}
+tr.rwr{background:#fffbeb}
+.ltcnt{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px}
+</style>
+</head>
+<body>
+<header>
+  <div class="hwrap">
+    <div>
+      <h1>Plan Zajęć <span style="font-weight:400;font-size:14px;opacity:.95">— SPS nr 7</span></h1>
+      <p class="sub">Szkoła podstawowa specjalna — automat + poprawki ręczne · dane nauczycieli tylko lokalnie</p>
+    </div>
+    <div id="badge"></div>
+  </div>
+  <nav id="tabs"></nav>
+</header>
+<div id="msg"></div>
+<main id="main"></main>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 1.</footer>
+<script>
+"use strict";
+/* ==================== stałe, stan ==================== */
+var DAYS = ["Poniedziałek", "Wtorek", "Środa", "Czwartek", "Piątek"];
+var NH = 8; // slotów dziennie
+var LS = "plan-zajec-vibe-v1";
+var S = null;
+var tab = "plan", sel = null, viewMode = "class", viewSel = "", ogrT = "", importRows = null, importText = "", eksMode = "klasy";
+var confirmKey = null, confirmTimer = null;
+
+function save(){ try{ localStorage.setItem(LS, JSON.stringify(S)); }catch(e){} }
+function normalize(p){
+  if (!p.settings) p.settings = { teacherMaxPerDay: 7, classMaxPerDay: 7 };
+  if (!p.settings.lessonTimes || p.settings.lessonTimes.length !== NH) p.settings.lessonTimes = defaultLessonTimes();
+  if (!p.placement) p.placement = {};
+  return p;
+}
+function loadState(){
+  try{
+    var raw = localStorage.getItem(LS);
+    if (raw){ var p = JSON.parse(raw); if (p && p.classes && p.teachers && p.activities && p.settings) return normalize(p); }
+  }catch(e){}
+  return sps7State();
+}
+function defaultLessonTimes(){ var t = ["8:00"]; for (var i = 1; i < NH; i++) t.push((7 + i) + ":55"); return t; }
+function minutesOf(t){ var m = /^(\d{1,2}):(\d{2})$/.exec((t || "").trim()); return m ? (+m[1]) * 60 + (+m[2]) : 0; }
+function fmtTime(min){ return Math.floor(min / 60) + ":" + String(min % 60).padStart(2, "0"); }
+function endOfLesson(t){ return fmtTime(minutesOf(t) + 45); }
+function lessonTimes(){ return S.settings.lessonTimes || defaultLessonTimes(); }
+function esc(s){ return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;"); }
+function colorIdx(s){ var h = 0; var str = String(s || ""); for (var i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) % 997; return h % 10; }
+function abbr(s){
+  var skip = ["w","i","na","z","do","dla"];
+  var raw = String(s || "").replace(/\./g," ").split(/\s+/).filter(Boolean);
+  if (raw.length === 1) return raw[0].slice(0,3).toUpperCase();
+  var init = raw.filter(function(w){ return skip.indexOf(w.toLowerCase()) < 0; }).map(function(w){ return w[0].toUpperCase(); }).join("");
+  return init || raw[0].slice(0,3).toUpperCase();
+}
+function pad(s, n){ s = String(s); return s.length >= n ? s.slice(0, n) : s + " ".repeat(n - s.length); }
+function nextId(items, prefix){
+  var max = 0;
+  items.forEach(function(it){ var m = new RegExp("^" + prefix + "(\\d+)$").exec(it.id); if (m) max = Math.max(max, +m[1]); });
+  return prefix + (max + 1);
+}
+function buildLessons(acts){
+  var out = [];
+  for (var a of acts){ for (var i = 0; i < a.hours; i++) out.push({ id: a.id + "-" + i, activityId: a.id, classId: a.classId, teacherId: a.teacherId, subject: a.subject }); }
+  return out;
+}
+function lessons(){ return buildLessons(S.activities); }
+function tById(){ var m = {}; S.teachers.forEach(function(t){ m[t.id] = t; }); return m; }
+function cById(){ var m = {}; S.classes.forEach(function(c){ m[c.id] = c; }); return m; }
+function tName(id){ var t = tById()[id]; return t ? t.name : "?"; }
+function tShort(id){ var t = tById()[id]; return t ? t.short : "?"; }
+function cName(id){ var c = cById()[id]; return c ? c.name : "?"; }
+function hoursBy(key){ var m = {}; S.activities.forEach(function(a){ m[a[key]] = (m[a[key]] || 0) + a.hours; }); return m; }
+
+/* ==================== dane startowe ==================== */
+function sps7State(){
+  var names = ["1a aut.","1b aut.","2a aut.","2b aut.","3a aut.","4a aut.","6a aut.","5aM","6aM","3a","4a","4b","5","5z","6b","7","7a","7z","8"];
+  return {
+    teachers: [],
+    classes: names.map(function(n, i){ return { id: "c" + (i + 1), name: n }; }),
+    activities: [],
+    placement: {},
+    settings: { teacherMaxPerDay: 7, classMaxPerDay: 7, lessonTimes: defaultLessonTimes() }
+  };
+}
+function demoState(){
+  function T(id, name, short, un){ return { id: id, name: name, short: short, unavail: un || [] }; }
+  function A(id, cid, subj, tid, h){ return { id: id, classId: cid, subject: subj, teacherId: tid, hours: h }; }
+  return {
+    teachers: [T("t1","Anna Kowalska","Kow"),T("t2","Maria Nowak","Now"),T("t3","Jan Wiśniewski","Wiś"),T("t4","Krystyna Zielińska","Zie"),T("t5","Barbara Lis","Lis"),T("t6","Piotr Malinowski","Mal"),T("t7","Agnieszka Kaczmarek","Kcz"),T("t8","Tomasz Bąk","Bąk",[0,1,2,3,4,5,6,7]),T("t9","ks. Adam Sikora","Sik",[37,38,39]),T("t10","Iwona Lewandowska","Lew"),T("t11","Stanisław Woźniak","Woź")],
+    classes: [{id:"c1",name:"1a"},{id:"c2",name:"1b"},{id:"c3",name:"2a"},{id:"c4",name:"2b"},{id:"c5",name:"3a"},{id:"c6",name:"3b"}],
+    activities: [A("a1","c1","Edukacja wczesnoszkolna","t1",15),A("a2","c1","Rewalidacja","t10",2),A("a3","c1","Religia","t9",2),A("a4","c1","WF","t8",3),A("a5","c2","Edukacja wczesnoszkolna","t2",15),A("a6","c2","Rewalidacja","t10",2),A("a7","c2","Religia","t9",2),A("a8","c2","WF","t8",3),A("a9","c3","Edukacja wczesnoszkolna","t3",15),A("a10","c3","Rewalidacja","t11",2),A("a11","c3","Religia","t9",2),A("a12","c3","WF","t8",3),A("a13","c4","Edukacja wczesnoszkolna","t4",15),A("a14","c4","Rewalidacja","t11",2),A("a15","c4","Religia","t9",2),A("a16","c4","WF","t8",3),A("a17","c5","J. polski","t5",5),A("a18","c5","Matematyka","t6",5),A("a19","c5","Przyroda","t5",2),A("a20","c5","Informatyka","t11",1),A("a21","c5","Plastyka","t7",1),A("a22","c5","Technika","t7",1),A("a23","c5","Muzyka","t7",1),A("a24","c5","WF","t8",3),A("a25","c5","Religia","t9",2),A("a26","c5","Rewalidacja","t10",2),A("a27","c6","J. polski","t5",5),A("a28","c6","Matematyka","t6",5),A("a29","c6","Przyroda","t5",2),A("a30","c6","Informatyka","t11",1),A("a31","c6","Plastyka","t7",1),A("a32","c6","Technika","t7",1),A("a33","c6","Muzyka","t7",1),A("a34","c6","WF","t8",3),A("a35","c6","Religia","t9",2),A("a36","c6","Rewalidacja","t11",2)],
+    placement: {},
+    settings: { teacherMaxPerDay: 7, classMaxPerDay: 7, lessonTimes: defaultLessonTimes() }
+  };
+}
+
+/* ==================== automatyczny układacz ==================== */
+function attemptSchedule(ls, teachers, settings, rng){
+  var placement = {}, unplaced = [];
+  var byId = {}; ls.forEach(function(l){ byId[l.id] = l; });
+  var unavail = {}; teachers.forEach(function(t){ unavail[t.id] = {}; t.unavail.forEach(function(s){ unavail[t.id][s] = true; }); });
+  var busyT = {}, busyC = {}, loadT = {}, loadC = {}, subjDay = {}, atSlot = {};
+  function dayOf(s){ return Math.floor(s / NH); }
+  function arr(m, k){ if (!m[k]) m[k] = [0,0,0,0,0]; return m[k]; }
+  function place(L, s){
+    placement[L.id] = s;
+    (busyT[L.teacherId] = busyT[L.teacherId] || {})[s] = true;
+    (busyC[L.classId] = busyC[L.classId] || {})[s] = true;
+    arr(loadT, L.teacherId)[dayOf(s)]++; arr(loadC, L.classId)[dayOf(s)]++;
+    var k = L.classId + "|" + dayOf(s) + "|" + L.subject;
+    subjDay[k] = (subjDay[k] || 0) + 1;
+    (atSlot[s] = atSlot[s] || []).push(L);
+  }
+  function unplace(L){
+    var s = placement[L.id]; if (s == null) return;
+    delete placement[L.id];
+    if (busyT[L.teacherId]) delete busyT[L.teacherId][s];
+    if (busyC[L.classId]) delete busyC[L.classId][s];
+    arr(loadT, L.teacherId)[dayOf(s)]--; arr(loadC, L.classId)[dayOf(s)]--;
+    var k = L.classId + "|" + dayOf(s) + "|" + L.subject;
+    subjDay[k] = Math.max(0, (subjDay[k] || 0) - 1);
+    var v = atSlot[s]; if (v){ var i = v.indexOf(L); if (i >= 0) v.splice(i, 1); }
+  }
+  function feasible(L, s){
+    var d = dayOf(s);
+    if (unavail[L.teacherId] && unavail[L.teacherId][s]) return false;
+    if (busyT[L.teacherId] && busyT[L.teacherId][s]) return false;
+    if (busyC[L.classId] && busyC[L.classId][s]) return false;
+    if (arr(loadT, L.teacherId)[d] >= settings.teacherMaxPerDay) return false;
+    if (arr(loadC, L.classId)[d] >= settings.classMaxPerDay) return false;
+    return true;
+  }
+  var tTotals = {};
+  ls.forEach(function(l){ tTotals[l.teacherId] = (tTotals[l.teacherId] || 0) + 1; });
+  var order = ls.slice().sort(function(a, b){ return (tTotals[b.teacherId] - tTotals[a.teacherId]) || (rng() - 0.5); });
+  for (var oi = 0; oi < order.length; oi++){
+    var L = order[oi];
+    var bestS = -1, bestScore = -Infinity;
+    for (var d = 0; d < 5; d++) for (var h = 0; h < NH; h++){
+      var s = d * NH + h;
+      if (!feasible(L, s)) continue;
+      var sameSubj = subjDay[L.classId + "|" + d + "|" + L.subject] || 0;
+      var score = -(2.0 * arr(loadC, L.classId)[d]) - (1.5 * arr(loadT, L.teacherId)[d]) - 4.0 * sameSubj - 0.5 * h + rng() * 0.9;
+      if (score > bestScore){ bestScore = score; bestS = s; }
+    }
+    if (bestS >= 0) place(L, bestS); else unplaced.push(L.id);
+  }
+  for (var round = 0; round < 4; round++){
+    var progress = false;
+    var un2 = unplaced.slice();
+    for (var ui = 0; ui < un2.length; ui++){
+      var uid = un2[ui], U = byId[uid]; if (!U) continue;
+      for (var s2 = 0; s2 < 5 * NH; s2++){
+        var dd = dayOf(s2);
+        if (unavail[U.teacherId] && unavail[U.teacherId][s2]) continue;
+        if (arr(loadT, U.teacherId)[dd] >= settings.teacherMaxPerDay) continue;
+        if (arr(loadC, U.classId)[dd] >= settings.classMaxPerDay) continue;
+        var blockers = (atSlot[s2] || []).filter(function(x){ return x.teacherId === U.teacherId || x.classId === U.classId; });
+        if (blockers.length === 0){
+          place(U, s2); unplaced.splice(unplaced.indexOf(uid), 1); progress = true; break;
+        }
+        if (blockers.length > 1) continue;
+        var B = blockers[0];
+        unplace(B);
+        if ((busyT[U.teacherId] && busyT[U.teacherId][s2]) || (busyC[U.classId] && busyC[U.classId][s2])){ place(B, s2); continue; }
+        var sB = -1, bestB = -Infinity;
+        for (var d3 = 0; d3 < 5; d3++) for (var h3 = 0; h3 < NH; h3++){
+          var s3 = d3 * NH + h3;
+          if (s3 === s2 || !feasible(B, s3)) continue;
+          var sc = -(2.0 * arr(loadC, B.classId)[d3]) - (1.5 * arr(loadT, B.teacherId)[d3]) + rng() * 0.9;
+          if (sc > bestB){ bestB = sc; sB = s3; }
+        }
+        if (sB >= 0){
+          place(U, s2); place(B, sB); unplaced.splice(unplaced.indexOf(uid), 1); progress = true; break;
+        } else place(B, s2);
+      }
+      if (progress && unplaced.indexOf(uid) < 0) { /* przeniesiony */ }
+    }
+    if (!progress) break;
+  }
+  var cost = 800 * unplaced.length;
+  for (var tk in loadT) for (var di = 0; di < 5; di++) cost += loadT[tk][di] * loadT[tk][di];
+  return { placement: Object.assign({}, placement), unplaced: unplaced.slice(), cost: cost };
+}
+function autoSchedule(ls, teachers, settings, tries){
+  var best = null;
+  for (var i = 0; i < (tries || 25); i++){
+    var r = attemptSchedule(ls, teachers, settings, Math.random);
+    if (!best || r.cost < best.cost) best = r;
+    if (best.unplaced.length === 0 && i >= 5) break;
+  }
+  return best;
+}
+
+/* ==================== walidacja ==================== */
+function findViolations(ls, teachers, classes, placement, settings){
+  var errs = [];
+  var tM = {}, cM = {};
+  teachers.forEach(function(t){ tM[t.id] = t; }); classes.forEach(function(c){ cM[c.id] = c; });
+  function tNm(id){ return tM[id] ? tM[id].name : id; }
+  function cNm(id){ return cM[id] ? cM[id].name : id; }
+  var slotT = {}, slotC = {}, loadT = {}, loadC = {};
+  function arr(m, k){ if (!m[k]) m[k] = [0,0,0,0,0]; return m[k]; }
+  for (var i = 0; i < ls.length; i++){
+    var L = ls[i], s = placement[L.id]; if (s == null) continue;
+    var d = Math.floor(s / NH), h = s % NH;
+    if (tM[L.teacherId] && tM[L.teacherId].unavail.indexOf(s) >= 0) errs.push(tNm(L.teacherId) + " nie jest dostępny/na: " + DAYS[d] + ", lekcja " + (h + 1));
+    var kT = L.teacherId + "|" + s;
+    if (slotT[kT]) errs.push(tNm(L.teacherId) + " ma dwie lekcje naraz (" + DAYS[d] + ", godz. " + (h + 1) + ")");
+    else slotT[kT] = L;
+    var kC = L.classId + "|" + s;
+    if (slotC[kC]) errs.push("Klasa " + cNm(L.classId) + " ma dwie lekcje naraz (" + DAYS[d] + ", godz. " + (h + 1) + ")");
+    else slotC[kC] = L;
+    arr(loadT, L.teacherId)[d]++; arr(loadC, L.classId)[d]++;
+  }
+  for (var tk in loadT) for (var dd = 0; dd < 5; dd++) if (loadT[tk][dd] > settings.teacherMaxPerDay) errs.push(tNm(tk) + " ma " + loadT[tk][dd] + " lekcji w " + DAYS[dd] + " (limit " + settings.teacherMaxPerDay + ")");
+  for (var ck in loadC) for (var dc = 0; dc < 5; dc++) if (loadC[ck][dc] > settings.classMaxPerDay) errs.push("Klasa " + cNm(ck) + " ma " + loadC[ck][dc] + " lekcji w " + DAYS[dc] + " (limit " + settings.classMaxPerDay + ")");
+  return errs;
+}
+function prunePlacement(){
+  var valid = {}; lessons().forEach(function(l){ valid[l.id] = true; });
+  Object.keys(S.placement).forEach(function(k){ if (!valid[k]) delete S.placement[k]; });
+}
+
+/* ==================== import przydziałów ==================== */
+function samePerson(a, b){
+  var wa = String(a).toLowerCase().replace(/\s+/g, " ").trim().split(" ").sort().join(" ");
+  var wb = String(b).toLowerCase().replace(/\s+/g, " ").trim().split(" ").sort().join(" ");
+  return wa.length > 0 && wa === wb;
+}
+function parseImportText(text){
+  var rows = [];
+  var lines = text.split(/\r?\n/).map(function(l){ return l.trim(); }).filter(Boolean);
+  function clean(x){ return x.trim().replace(/^["'„»]+/, "").replace(/["'«»]+$/, ""); }
+  var lastTeacher = null;
+  function isTeacherHeading(line){
+    if (/\d/.test(line)) return null;
+    var first = line.split(/\s+/)[0].toLowerCase();
+    if (["nauczyciel","przydział","przedmiot","godzin","godziny","klasa","suma","razem","ogółem","lp"].indexOf(first) >= 0) return null;
+    var hm = /^(.+?)\s*(?:[–—:]\s*.*|:.*)$/.exec(line);
+    var name = (hm ? hm[1] : line).replace(/[.:,]$/, "").trim();
+    if (name.split(/\s+/).length >= 2 && name.length > 4) return name.replace(/\s*\([^)]*\)\s*$/, "").trim();
+    return null;
+  }
+  for (var li = 0; li < lines.length; li++){
+    var raw = lines[li], low = raw.toLowerCase();
+    if (rows.length === 0 && low.indexOf("nauczyciel") >= 0 && (low.indexOf("przedmiot") >= 0 || low.indexOf("klasa") >= 0 || low.indexOf("godzin") >= 0)) continue;
+    var line = raw.replace(/^\s*(\d{1,3}[.)]\s+|[-•*·–—]\s*)/, "").trim();
+    var parts = line.indexOf("\t") >= 0 ? line.split("\t") : line.indexOf(";") >= 0 ? line.split(";") : line.indexOf(",") >= 0 ? line.split(",") : null;
+    if (!parts){
+      var h1 = isTeacherHeading(line);
+      if (h1){ lastTeacher = h1; continue; }
+      rows.push({ teacher: line.slice(0, 40), subject: "", className: "", hours: 0, status: "err", note: "nie rozpoznano kolumn — użyj tabulatorów (wklejka z Worda) lub ;" });
+      continue;
+    }
+    var fields = parts.map(clean).filter(function(x){ return x.length > 0; });
+    if (fields.length === 0) continue;
+    if (fields.length === 1){
+      var h2 = isTeacherHeading(fields[0]);
+      if (h2){ lastTeacher = h2; continue; }
+      rows.push({ teacher: fields[0].slice(0, 40), subject: "", className: "", hours: 0, status: "err", note: "za mało kolumn w wierszu" });
+      continue;
+    }
+    var hoursIdx = -1;
+    for (var ii = fields.length - 1; ii >= 0; ii--) if (/^\d{1,2}\s*(h|godz\.?|g)?$/i.test(fields[ii])){ hoursIdx = ii; break; }
+    var hours = hoursIdx >= 0 ? Math.max(1, parseInt(fields[hoursIdx], 10)) : 1;
+    var noteParts = [];
+    if (hoursIdx < 0) noteParts.push("brak godzin — przyjęto 1");
+    var rest = fields.filter(function(_, idx){ return idx !== hoursIdx; });
+    var classIdx = -1;
+    for (var ci = 0; ci < rest.length; ci++){
+      var f = rest[ci].replace(/^klasa\s+/i, "").trim();
+      var matchesExisting = S.classes.some(function(c){ return c.name.toLowerCase() === f.toLowerCase(); });
+      var classLike = /^\d/.test(f) && f.length <= 14;
+      if (matchesExisting || classLike){ classIdx = ci; break; }
+    }
+    var className = "";
+    if (classIdx >= 0){
+      className = rest[classIdx].replace(/^klasa\s+/i, "").trim();
+      rest = rest.filter(function(_, idx){ return idx !== classIdx; });
+    } else noteParts.push("nie rozpoznano klasy");
+    var teacher = "", short, subject = "";
+    var teacherIdx = -1;
+    for (var ti = 0; ti < rest.length; ti++){
+      var found = S.teachers.some(function(t){ return samePerson(t.name, rest[ti]); });
+      if (found){ teacherIdx = ti; break; }
+    }
+    if (teacherIdx >= 0){
+      teacher = rest[teacherIdx];
+      subject = rest.filter(function(_, idx){ return idx !== teacherIdx; }).join(" ").trim();
+    } else if (rest.length >= 2){
+      teacher = rest[0]; subject = rest.slice(1).join(" ").trim();
+    } else if (rest.length === 1 && lastTeacher){
+      subject = rest[0]; teacher = lastTeacher;
+      noteParts.push("nauczyciel z poprzedniego wiersza (scalone komórki)");
+    }
+    var mm = /^(.*?)\s*\(([^)]+)\)\s*$/.exec(teacher);
+    if (mm){ teacher = mm[1].trim(); short = mm[2].trim(); }
+    var status = "ok";
+    var teacherExists = S.teachers.some(function(t){ return samePerson(t.name, teacher); });
+    var classExists = className !== "" && S.classes.some(function(c){ return c.name.toLowerCase() === className.toLowerCase(); });
+    var dup = teacher && className && subject && S.activities.some(function(a){
+      var an = tById()[a.teacherId], cn = cById()[a.classId];
+      return an && samePerson(an.name, teacher) && cn && cn.name.toLowerCase() === className.toLowerCase() && a.subject.toLowerCase() === subject.toLowerCase() && a.hours === hours;
+    });
+    if (!teacher || !subject || !className){
+      status = "err";
+      if (!teacher) noteParts.push("brak nauczyciela");
+      if (!subject) noteParts.push("brak przedmiotu");
+    } else if (dup){
+      status = "err"; noteParts.push("duplikat — już jest w danych");
+    } else {
+      if (!teacherExists){ status = "warn"; noteParts.push("nowy nauczyciel — zostanie dodany"); }
+      if (!classExists){ status = "warn"; noteParts.push("nowa klasa — zostanie dodana"); }
+    }
+    if (teacher) lastTeacher = teacher;
+    rows.push({ teacher: teacher, short: short, subject: subject, className: className, hours: hours, status: status, note: noteParts.join("; ") || null });
+  }
+  return rows;
+}
+
+/* ==================== komunikaty ==================== */
+var msgTimer = null;
+function flash(text, kind){
+  var m = document.getElementById("msg");
+  m.className = kind || "ok";
+  m.style.display = "block";
+  m.innerHTML = '<div class="inner">' + esc(text) + "</div>";
+  clearTimeout(msgTimer);
+  msgTimer = setTimeout(function(){ m.style.display = "none"; }, 5000);
+}
+
+/* ==================== render ==================== */
+function setTab(t){ tab = t; render(); }
+function opts(list, val, label){
+  var has = list.some(function(x){ return x.id === val; });
+  var h = "";
+  if (!has && val) h += '<option value="' + esc(val) + '" selected>' + esc(label || "?") + "</option>";
+  list.forEach(function(x){ h += '<option value="' + x.id + '"' + (x.id === val ? " selected" : "") + ">" + esc(x.name) + "</option>"; });
+  return h;
+}
+function renderTabs(){
+  var tabs = [["dane","📋 Dane"],["ogr","⛔ Ograniczenia"],["plan","🗓️ Plan"],["eks","🖨️ Eksport"]];
+  document.getElementById("tabs").innerHTML = tabs.map(function(t){
+    return '<button class="tab' + (tab === t[0] ? " on" : "") + '" onclick="setTab(\'' + t[0] + '\')">' + t[1] + "</button>";
+  }).join("");
+}
+function renderBadge(){
+  var ls = lessons();
+  var unp = ls.filter(function(L){ return S.placement[L.id] == null; }).length;
+  var b = document.getElementById("badge");
+  if (ls.length && unp === 0) b.innerHTML = '<span class="okb">Plan kompletny ✓</span>';
+  else if (unp > 0) b.innerHTML = '<span class="errb">Nieprzypisane: ' + unp + "</span>";
+  else b.innerHTML = "";
+}
+function render(){
+  renderTabs(); renderBadge();
+  var m = document.getElementById("main");
+  if (tab === "dane") m.innerHTML = renderDane();
+  else if (tab === "ogr") m.innerHTML = renderOgr();
+  else if (tab === "plan") m.innerHTML = renderPlan();
+  else m.innerHTML = renderEks();
+}
+
+/* ---------- zakładka DANE ---------- */
+function renderDane(){
+  var hByC = hoursBy("classId"), hByT = hoursBy("teacherId");
+  var h = '<div class="grid2">';
+  h += '<div class="card"><div class="hd">🏫 Oddziały / klasy</div><div class="bd">';
+  if (!S.classes.length) h += '<p class="hint">Brak oddziałów — dodaj pierwszy.</p>';
+  S.classes.forEach(function(c){
+    h += '<div class="row"><input class="inp" style="flex:1" value="' + esc(c.name) + '" onchange="renClass(\'' + c.id + '\',this.value)">'
+       + '<span class="badge">' + (hByC[c.id] || 0) + ' h/tydz.</span>'
+       + '<button class="del" title="Usuń" onclick="delClass(\'' + c.id + '\')">✕</button></div>';
+  });
+  h += '<div class="row"><input id="newClassName" class="inp" style="flex:1" placeholder="np. 4a"><button class="btn" onclick="addClass()">+ Dodaj</button></div>';
+  h += "</div></div>";
+  h += '<div class="card"><div class="hd">👩‍🏫 Nauczyciele</div><div class="bd">';
+  if (!S.teachers.length) h += '<p class="hint">Brak nauczycieli — dodaj pierwszego albo zaimportuj przydziały (niżej).</p>';
+  S.teachers.forEach(function(t){
+    h += '<div class="row"><input class="inp" style="flex:1" value="' + esc(t.name) + '" onchange="renTeacher(\'' + t.id + '\',this.value)">'
+       + '<input class="inp" style="width:58px;text-align:center" title="skrót" value="' + esc(t.short) + '" onchange="renShort(\'' + t.id + '\',this.value)">'
+       + '<span class="badge">' + (hByT[t.id] || 0) + ' h</span>'
+       + '<button class="btn2" title="Ograniczenia dostępności" onclick="ogrLink(\'' + t.id + '\')">⛔</button>'
+       + '<button class="del" title="Usuń" onclick="delTeacher(\'' + t.id + '\')">✕</button></div>';
+  });
+  h += '<div class="row"><input id="newTeacherName" class="inp" style="flex:1" placeholder="np. Jan Kowalski"><input id="newTeacherShort" class="inp" style="width:58px;text-align:center" placeholder="skrót"><button class="btn" onclick="addTeacher()">+ Dodaj</button></div>';
+  h += "</div></div></div>";
+  h += '<div class="card"><div class="hd">📚 Zajęcia — kto, co i ile godzin prowadzi w danej klasie</div><div class="bd">';
+  if (!S.activities.length) h += '<p class="hint">Brak zajęć — dodaj pierwszy wiersz albo skorzystaj z importu poniżej.</p>';
+  S.activities.forEach(function(a){
+    h += '<div class="act">'
+       + '<select class="inp" onchange="setAct(\'' + a.id + '\',\'classId\',this.value)">' + opts(S.classes, a.classId) + "</select>"
+       + '<select class="inp" onchange="setAct(\'' + a.id + '\',\'teacherId\',this.value)">' + opts(S.teachers, a.teacherId) + "</select>"
+       + '<input class="inp" placeholder="przedmiot" value="' + esc(a.subject) + '" onchange="setAct(\'' + a.id + '\',\'subject\',this.value)">'
+       + '<input class="inp" type="number" min="1" max="20" style="text-align:center" value="' + a.hours + '" onchange="setAct(\'' + a.id + '\',\'hours\',this.value)">'
+       + '<button class="del" onclick="delAct(\'' + a.id + '\')">✕</button></div>';
+  });
+  h += '<button class="btn2" onclick="addAct()">+ Dodaj zajęcia</button> <span class="hint">Godziny = liczba lekcji tygodniowo.</span></div></div>';
+  h += '<div class="card"><div class="hd">📥 Import przydziałów nauczycieli — wklej z Worda/Excela, bez klepania</div><div class="bd">';
+  h += '<p class="hint">Rozpoznaję kolumny <b>Nauczyciel · Przedmiot · Klasa · Godziny</b> w dowolnej kolejności (godziny i klasę wykrywam sam). Rozpoznaję szkolne nazwy oddziałów (np. 5aM, 7z, „1a aut."). Scalone komórki Worda działają. Plik <b>.docx</b> nie zostanie odczytany — zaznacz tabelę w Wordzie i wklej przez <b>Ctrl+V</b>, albo zapisz jako „zwykły tekst (.txt)" i wczytaj plik. Skrót nauczyciela możesz podać w nawiasie: Kowalska Anna (Kow).</p>';
+  h += '<div class="row"><input type="file" class="file" id="importFile" accept=".txt,.csv,.tsv" onchange="importFileRead(this)"><button class="btn" onclick="analyze()">🔍 Analizuj</button></div>';
+  h += '<textarea id="importText" class="inp ta" rows="6" placeholder="np. wklejone z Worda (tabulatory):&#10;Kowalska Anna\tEdukacja wczesnoszkolna\t1a\t15&#10;\tRewalidacja\t1a\t2&#10;Lis Barbara\tJ. polski\t3a\t5">' + esc(importText) + "</textarea>";
+  if (importRows){
+    var okN = importRows.filter(function(r){ return r.status !== "err"; }).length;
+    var erN = importRows.length - okN;
+    h += '<div style="margin-top:10px"><b>Podgląd: ' + okN + " do zaimportowania, " + erN + " odrzuconych</b>";
+    h += '<div class="prevtbl"><table><tr><th>Nauczyciel</th><th>Przedmiot</th><th>Klasa</th><th>Godz.</th><th>Status</th></tr>';
+    importRows.forEach(function(r){
+      h += '<tr class="' + (r.status === "err" ? "rer" : r.status === "warn" ? "rwr" : "") + '"><td>' + esc(r.teacher || "—") + "</td><td>" + esc(r.subject || "—") + "</td><td>" + esc(r.className || "—") + '</td><td style="text-align:right">' + (r.hours || "—") + "</td><td>" + (r.status === "ok" ? "✓" : esc(r.note || "błąd")) + "</td></tr>";
+    });
+    h += "</table></div>";
+    h += '<div class="row" style="margin-top:8px"><button class="btn" onclick="doImport()">✅ Importuj ' + okN + ' wierszy</button><button class="btn2" onclick="cancelImport()">Anuluj</button></div></div>';
+  }
+  h += "</div></div>";
+  h += '<div class="row">'
+     + '<button class="btn2" onclick="confirmClick(\'sps7\',loadSPS7)">' + (confirmKey === "sps7" ? "Na pewno? Zastąpi dane!" : "🏫 Wczytaj strukturę SPS nr 7") + "</button>"
+     + '<button class="btn2" onclick="confirmClick(\'demo\',loadDemo)">' + (confirmKey === "demo" ? "Na pewno? Zastąpi dane!" : "🧪 Wczytaj przykład") + "</button>"
+     + '<button class="btn2" onclick="confirmClick(\'all\',clearAll)">' + (confirmKey === "all" ? "Na pewno? Bez powrotu!" : "🗑 Wyczyść wszystko") + "</button>"
+     + "</div>";
+  return h;
+}
+function confirmClick(key, fn){
+  if (confirmKey === key){ confirmKey = null; clearTimeout(confirmTimer); fn(); return; }
+  confirmKey = key; clearTimeout(confirmTimer);
+  confirmTimer = setTimeout(function(){ confirmKey = null; render(); }, 3000);
+  render();
+}
+function loadSPS7(){ S = sps7State(); sel = null; importRows = null; importText = ""; save(); render(); flash("Wczytano strukturę SPS nr 7. Dodaj nauczycieli / wklej przydziały.", "ok"); }
+function loadDemo(){ S = demoState(); sel = null; importRows = null; importText = ""; save(); render(); flash("Wczytano przykładową szkołę.", "ok"); }
+function clearAll(){ S = { teachers: [], classes: [], activities: [], placement: {}, settings: { teacherMaxPerDay: 7, classMaxPerDay: 7, lessonTimes: defaultLessonTimes() } }; sel = null; importRows = null; importText = ""; save(); render(); flash("Wyczyszczono wszystko.", "ok"); }
+function addClass(){
+  var v = document.getElementById("newClassName").value.trim();
+  if (!v) return;
+  S.classes.push({ id: nextId(S.classes, "c"), name: v }); save(); render();
+}
+function renClass(id, v){ S.classes.forEach(function(c){ if (c.id === id) c.name = v; }); save(); render(); }
+function delClass(id){
+  if (S.activities.some(function(a){ return a.classId === id; })){ flash("Nie można usunąć — klasa ma zajęcia. Najpierw usuń te zajęcia.", "err"); return; }
+  S.classes = S.classes.filter(function(c){ return c.id !== id; });
+  if (viewMode === "class" && viewSel === id) viewSel = "";
+  save(); render();
+}
+function addTeacher(){
+  var v = document.getElementById("newTeacherName").value.trim();
+  if (!v) return;
+  var sh = document.getElementById("newTeacherShort").value.trim() || v.split(/\s+/).slice(-1)[0].slice(0, 3);
+  S.teachers.push({ id: nextId(S.teachers, "t"), name: v, short: sh, unavail: [] }); save(); render();
+}
+function renTeacher(id, v){ S.teachers.forEach(function(t){ if (t.id === id) t.name = v; }); save(); render(); }
+function renShort(id, v){ S.teachers.forEach(function(t){ if (t.id === id) t.short = v; }); save(); render(); }
+function delTeacher(id){
+  if (S.activities.some(function(a){ return a.teacherId === id; })){ flash("Nie można usunąć — nauczyciel ma zajęcia.", "err"); return; }
+  S.teachers = S.teachers.filter(function(t){ return t.id !== id; });
+  if (viewMode === "teacher" && viewSel === id) viewSel = "";
+  if (ogrT === id) ogrT = "";
+  save(); render();
+}
+function addAct(){
+  if (!S.classes.length || !S.teachers.length){ flash("Najpierw dodaj przynajmniej jedną klasę i jednego nauczyciela.", "warn"); return; }
+  S.activities.push({ id: nextId(S.activities, "a"), classId: S.classes[0].id, teacherId: S.teachers[0].id, subject: "", hours: 1 }); save(); render();
+}
+function setAct(id, key, val){
+  var a = null; S.activities.forEach(function(x){ if (x.id === id) a = x; });
+  if (!a) return;
+  if (key === "hours") a.hours = Math.max(1, Math.min(20, parseInt(val) || 1)); else a[key] = val;
+  prunePlacement(); save(); render();
+}
+function delAct(id){
+  S.activities = S.activities.filter(function(a){ return a.id !== id; });
+  Object.keys(S.placement).forEach(function(k){ if (k.indexOf(id + "-") === 0) delete S.placement[k]; });
+  save(); render();
+}
+function importFileRead(input){
+  var f = input.files && input.files[0]; if (!f) return;
+  var fr = new FileReader();
+  fr.onload = function(){ importText = String(fr.result || ""); render(); };
+  fr.readAsText(f, "UTF-8");
+}
+function analyze(){
+  var ta = document.getElementById("importText");
+  importText = ta ? ta.value : importText;
+  if (!importText.trim()){ flash("Wklej dane do okienka albo wczytaj plik .txt/.csv.", "warn"); return; }
+  importRows = parseImportText(importText);
+  render();
+  var okN = importRows.filter(function(r){ return r.status !== "err"; }).length, erN = importRows.length - okN;
+  flash(erN === 0 ? "Rozpoznano " + okN + " wierszy — sprawdź podgląd i kliknij Importuj." : "Rozpoznano " + okN + " wierszy, " + erN + " odrzucono — sprawdź podgląd.", erN === 0 ? "ok" : "warn");
+}
+function cancelImport(){ importRows = null; render(); }
+function doImport(){
+  if (!importRows) return;
+  var rows = importRows.filter(function(r){ return r.status !== "err" && r.teacher && r.className; });
+  if (!rows.length){ flash("Brak wierszy do zaimportowania.", "err"); return; }
+  var addedT = 0, addedC = 0;
+  rows.forEach(function(r){
+    var t = null;
+    S.teachers.forEach(function(x){ if (!t && samePerson(x.name, r.teacher)) t = x; });
+    if (!t){ t = { id: nextId(S.teachers, "t"), name: r.teacher, short: r.short || r.teacher.split(/\s+/).slice(-1)[0].slice(0, 3), unavail: [] }; S.teachers.push(t); addedT++; }
+    var c = null;
+    S.classes.forEach(function(x){ if (!c && x.name.toLowerCase() === r.className.toLowerCase()) c = x; });
+    if (!c){ c = { id: nextId(S.classes, "c"), name: r.className }; S.classes.push(c); addedC++; }
+    S.activities.push({ id: nextId(S.activities, "a"), classId: c.id, teacherId: t.id, subject: r.subject, hours: r.hours });
+  });
+  importRows = null; importText = ""; save(); render();
+  flash("✅ Zaimportowano " + rows.length + " przydziałów (+" + addedT + " nauczycieli, +" + addedC + " klas). Wygeneruj plan albo dokładaj ręcznie.", "ok");
+}
+
+/* ---------- zakładka OGRANICZENIA ---------- */
+function ogrLink(id){ ogrT = id; tab = "ogr"; render(); }
+function ogrSet(id){ ogrT = id; render(); }
+function toggU(s){
+  var t = null; S.teachers.forEach(function(x){ if (x.id === ogrT) t = x; });
+  if (!t) return;
+  var has = t.unavail.indexOf(s) >= 0;
+  if (has) t.unavail = t.unavail.filter(function(x){ return x !== s; });
+  else {
+    t.unavail.push(s);
+    var cleared = 0;
+    lessons().forEach(function(L){ if (S.placement[L.id] === s && L.teacherId === t.id){ delete S.placement[L.id]; cleared++; } });
+    if (cleared) flash("Godzina zablokowana — " + cleared + " lekcja(e) wróciły do nieprzypisanych.", "warn");
+  }
+  save(); render();
+}
+function setLT(i, v){
+  var lt = lessonTimes().slice();
+  lt[i] = v;
+  S.settings.lessonTimes = lt; save(); render();
+}
+function setLimit(k, v){
+  S.settings[k] = Math.max(1, Math.min(NH, parseInt(v) || 7)); save(); render();
+}
+function renderOgr(){
+  var tid = S.teachers.some(function(t){ return t.id === ogrT; }) ? ogrT : (S.teachers[0] ? S.teachers[0].id : "");
+  ogrT = tid;
+  var h = '<div class="card"><div class="hd">⛔ Niedostępność nauczyciela (kliknij godzinę, żeby zablokować)</div><div class="bd">';
+  if (!S.teachers.length) h += '<p class="hint">Najpierw dodaj nauczycieli w zakładce Dane.</p>';
+  else {
+    var t = null; S.teachers.forEach(function(x){ if (x.id === tid) t = x; });
+    h += '<div class="row"><span class="lbl">Nauczyciel:</span><select class="inp" onchange="ogrSet(this.value)">' + opts(S.teachers, tid) + "</select></div>";
+    var lt = lessonTimes();
+    h += '<div style="overflow-x:auto"><table class="unav"><tr><th></th>';
+    for (var i = 0; i < NH; i++) h += "<th>lek. " + (i + 1) + "<br><span class='sub'>" + esc(lt[i]) + "</span></th>";
+    h += "</tr>";
+    for (var d = 0; d < 5; d++){
+      h += '<tr><td class="day">' + DAYS[d] + "</td>";
+      for (var hh = 0; hh < NH; hh++){
+        var s = d * NH + hh, off = t.unavail.indexOf(s) >= 0;
+        h += '<td><button class="' + (off ? "uoff" : "uon") + '" onclick="toggU(' + s + ')">' + (off ? "✕" : "✓") + "</button></td>";
+      }
+      h += "</tr>";
+    }
+    h += "</table></div>";
+  }
+  h += "</div></div>";
+  h += '<div class="card"><div class="hd">🕐 Godziny lekcyjne</div><div class="bd"><div class="ltcnt">';
+  var lt2 = lessonTimes();
+  for (var j = 0; j < NH; j++){
+    h += '<div class="row" style="margin:0"><span class="lbl" style="width:52px">lek. ' + (j + 1) + ':</span><input class="inp" style="width:76px;text-align:center" value="' + esc(lt2[j]) + '" onchange="setLT(' + j + ',this.value)"><span class="hint" style="margin:0">– ' + endOfLesson(lt2[j]) + "</span></div>";
+  }
+  h += '</div><p class="hint">Rytm domyślny (SPS nr 7): pierwsza lekcja 8:00, każda następna o :55; lekcja trwa 45 minut.</p></div></div>';
+  h += '<div class="card"><div class="hd">⚙️ Limity dzienne</div><div class="bd"><div class="row">'
+     + '<label class="lbl">Maks. lekcji nauczyciela dziennie:</label><input class="inp" type="number" style="width:70px" value="' + S.settings.teacherMaxPerDay + '" onchange="setLimit(\'teacherMaxPerDay\',this.value)">'
+     + '<label class="lbl" style="margin-left:14px">Maks. lekcji klasy dziennie:</label><input class="inp" type="number" style="width:70px" value="' + S.settings.classMaxPerDay + '" onchange="setLimit(\'classMaxPerDay\',this.value)">'
+     + '</div><p class="hint">Zmiana limitów obowiązuje przy kolejnym generowaniu i ruchach ręcznych.</p></div></div>';
+  return h;
+}
+
+/* ---------- zakładka PLAN ---------- */
+function lessonsBySlot(ls, placement){
+  var m = {};
+  for (var i = 0; i < ls.length; i++){
+    var s = placement[ls[i].id]; if (s == null) continue;
+    (m[s] = m[s] || []).push(ls[i]);
+  }
+  return m;
+}
+function setViewMode(v){ viewMode = v; sel = null; viewSel = ""; render(); }
+function setViewSel(v){ viewSel = v; sel = null; render(); }
+function chipClick(id){ sel = (sel === id ? null : id); render(); }
+function runAuto(){
+  var ls = lessons();
+  if (!ls.length){ flash("Najpierw dodaj oddziały, nauczycieli i zajęcia w zakładce Dane.", "warn"); return; }
+  var res = autoSchedule(ls, S.teachers, S.settings, 25);
+  S.placement = res.placement; sel = null; save(); render();
+  if (res.unplaced.length === 0) flash("✅ Ułożono wszystkie " + ls.length + " lekcji.", "ok");
+  else flash("Ułożono " + (ls.length - res.unplaced.length) + "/" + ls.length + ". Nieprzypisane dociśnij ręcznie (czerwone chipsy).", "warn");
+}
+function clearPlan(){ S.placement = {}; sel = null; save(); render(); flash("Plan wyczyszczony.", "ok"); }
+function applyPlacement(np, okText){
+  var errs = findViolations(lessons(), S.teachers, S.classes, np, S.settings);
+  if (errs.length){ flash("⛔ " + errs[0], "err"); return; }
+  S.placement = np; sel = null; save(); render(); flash(okText, "ok");
+}
+function cellClick(s){
+  var ls = lessons(), placement = S.placement, bySlot = lessonsBySlot(ls, placement);
+  var eff = viewSel;
+  var here = (bySlot[s] || []).filter(function(x){ return viewMode === "class" ? x.classId === eff : x.teacherId === eff; })[0];
+  if (sel == null){ if (here){ sel = here.id; render(); } return; }
+  if (here && here.id === sel){ sel = null; render(); return; }
+  var SL = null; ls.forEach(function(l){ if (l.id === sel) SL = l; });
+  if (!SL){ sel = null; render(); return; }
+  var placed = placement[sel] != null;
+  var np;
+  if (here){
+    if (placed){
+      np = Object.assign({}, placement);
+      var a = np[sel], b = np[here.id]; np[sel] = b; np[here.id] = a;
+      applyPlacement(np, "✅ Zamieniono lekcje.");
+    } else {
+      np = Object.assign({}, placement); np[sel] = s; delete np[here.id];
+      applyPlacement(np, "Podmieniono — zajęta lekcja wróciła do nieprzypisanych.");
+    }
+  } else {
+    np = Object.assign({}, placement); np[sel] = s;
+    applyPlacement(np, "✅ Przeniesiono.");
+  }
+}
+function unassign(id, ev){
+  if (ev) ev.preventDefault();
+  delete S.placement[id];
+  if (sel === id) sel = null;
+  save(); render();
+  flash("Lekcja wróciła do nieprzypisanych.", "ok");
+}
+function renderPlan(){
+  var ls = lessons(), placement = S.placement;
+  var unplaced = ls.filter(function(l){ return placement[l.id] == null; });
+  var placed = ls.length - unplaced.length;
+  var ents = viewMode === "class" ? S.classes : S.teachers;
+  var h = '<div class="row">';
+  h += '<select class="inp" onchange="setViewMode(this.value)"><option value="class"' + (viewMode === "class" ? " selected" : "") + '>Widok: oddział</option><option value="teacher"' + (viewMode === "teacher" ? " selected" : "") + ">Widok: nauczyciel</option></select>";
+  if (!ents.length){
+    h += '<span class="hint">Brak ' + (viewMode === "class" ? "oddziałów" : "nauczycieli") + " — zacznij od zakładki Dane.</span></div>";
+    return h;
+  }
+  var eff = ents.some(function(e){ return e.id === viewSel; }) ? viewSel : ents[0].id;
+  viewSel = eff;
+  h += '<select class="inp" onchange="setViewSel(this.value)">' + ents.map(function(e){ return '<option value="' + e.id + '"' + (e.id === eff ? " selected" : "") + ">" + esc(e.name) + "</option>"; }).join("") + "</select>";
+  h += '<button class="btn" onclick="runAuto()">🪄 Wygeneruj automatycznie</button>';
+  h += '<button class="btn2" onclick="confirmClick(\'plan\',clearPlan)">' + (confirmKey === "plan" ? "Na pewno wyczyścić?" : "🧹 Wyczyść plan") + "</button>";
+  h += '<span class="badge ' + (placed === ls.length && ls.length > 0 ? "ok" : "err") + '">' + placed + "/" + ls.length + " lekcji ułożonych</span>";
+  h += "</div>";
+  if (unplaced.length){
+    h += '<div class="unplaced"><b>📦 Nieprzypisane (' + unplaced.length + ") — kliknij lekcję, potem wolne pole w planie:</b><div>";
+    unplaced.forEach(function(L){
+      h += '<button class="chip c' + colorIdx(L.subject) + (sel === L.id ? " sel" : "") + '" onclick="chipClick(\'' + L.id + '\')">' + esc(L.subject) + " • " + esc(cName(L.classId)) + " • " + esc(tShort(L.teacherId)) + "</button>";
+    });
+    h += "</div></div>";
+  }
+  var bySlot = lessonsBySlot(ls, placement);
+  var lt = lessonTimes();
+  var dayLoads = [0, 0, 0, 0, 0];
+  for (var s in bySlot){
+    var rel = bySlot[s].filter(function(x){ return viewMode === "class" ? x.classId === eff : x.teacherId === eff; });
+    if (rel.length) dayLoads[Math.floor(s / NH)] += rel.length;
+  }
+  h += '<div style="overflow-x:auto"><table class="plan"><tr><th></th>';
+  for (var i = 0; i < NH; i++) h += "<th>lek. " + (i + 1) + "<br><span class='sub'>" + esc(lt[i]) + "</span></th>";
+  h += "</tr>";
+  for (var d = 0; d < 5; d++){
+    h += '<tr><td class="day">' + DAYS[d] + '<br><span class="sub' + (dayLoads[d] > S.settings.classMaxPerDay ? " err" : "") + '">' + dayLoads[d] + " lek.</span></td>";
+    for (var hh = 0; hh < NH; hh++){
+      var s2 = d * NH + hh;
+      var L = (bySlot[s2] || []).filter(function(x){ return viewMode === "class" ? x.classId === eff : x.teacherId === eff; })[0];
+      h += '<td onclick="cellClick(' + s2 + ')">';
+      if (L){
+        h += '<div class="chip c' + colorIdx(L.subject) + (sel === L.id ? " sel" : "") + '" oncontextmenu="unassign(\'' + L.id + '\',event)" title="' + esc(L.subject) + " — prawy klik usuwa z planu\">"
+           + '<span class="subj">' + esc(L.subject) + "</span>"
+           + '<span class="sub">' + esc(viewMode === "class" ? tShort(L.teacherId) : cName(L.classId)) + "</span></div>";
+      }
+      h += "</td>";
+    }
+    h += "</tr>";
+  }
+  h += "</table></div>";
+  h += '<p class="hint">Klik lekcja → wolne pole = przeniesienie • lekcja → lekcja = zamiana • prawy klik = usuń z planu. Program pilnuje dostępności nauczycieli, podwójnych lekcji i limitów dziennych.</p>';
+  return h;
+}
+
+/* ---------- zakładka EKSPORT ---------- */
+function eksModeSet(m){ eksMode = m; render(); }
+function planText(kind, id, bySlot){
+  var header = kind === "class" ? ("KLASA " + cName(id)) : ("NAUCZYCIEL: " + tName(id));
+  var rows = [];
+  rows.push("PLAN ZAJĘĆ — " + header);
+  rows.push("=".repeat(90));
+  rows.push("Godziny lekcyjne: " + lessonTimes().map(function(t, i){ return (i + 1) + " — " + t; }).join(", "));
+  rows.push(pad("Godz", 6) + DAYS.map(function(d){ return pad(d, 16); }).join(""));
+  for (var h2 = 0; h2 < NH; h2++){
+    var row = pad(String(h2 + 1), 6);
+    for (var d = 0; d < 5; d++){
+      var s = d * NH + h2;
+      var L = (bySlot[s] || []).filter(function(x){ return kind === "class" ? x.classId === id : x.teacherId === id; })[0];
+      row += pad(L ? (abbr(L.subject) + " " + tShort(L.teacherId)) : "—", 16);
+    }
+    rows.push(row);
+  }
+  return rows.join("\n");
+}
+function eksText(){
+  var ls = lessons(), placement = S.placement, bySlot = lessonsBySlot(ls, placement);
+  var unp = ls.filter(function(L){ return placement[L.id] == null; });
+  var foot = unp.length ? ("\n\nNIEPRZYPISANE (" + unp.length + "):\n" + unp.map(function(L){ return "- " + L.subject + ", klasa " + cName(L.classId) + ", " + tName(L.teacherId); }).join("\n")) : "";
+  if (eksMode === "csv"){
+    var out = ["Klasa;Dzień;Godzina;Przedmiot;Nauczyciel"];
+    ls.filter(function(L){ return placement[L.id] != null; })
+      .sort(function(a, b){ return cName(a.classId).localeCompare(cName(b.classId)) || placement[a.id] - placement[b.id]; })
+      .forEach(function(L){
+        var s = placement[L.id];
+        out.push(cName(L.classId) + ";" + DAYS[Math.floor(s / NH)] + ";" + ((s % NH) + 1) + ";" + L.subject + ";" + tName(L.teacherId));
+      });
+    return out.join("\n") + foot;
+  }
+  var ids = eksMode === "klasy" ? S.classes.map(function(c){ return c.id; }) : S.teachers.map(function(t){ return t.id; });
+  return ids.map(function(id){ return planText(eksMode === "klasy" ? "class" : "teacher", id, bySlot); }).join("\n\n") + foot;
+}
+function copyEks(){
+  var ta = document.getElementById("eksText");
+  ta.focus(); ta.select();
+  function fallback(){
+    try{ if (document.execCommand("copy")){ flash("Skopiowano do schowka.", "ok"); return; } }catch(e){}
+    flash("Schowek niedostępny — tekst jest zaznaczony, skopiuj ręcznie (Ctrl+C).", "warn");
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(ta.value).then(function(){ flash("Skopiowano do schowka.", "ok"); }, fallback);
+  } else fallback();
+}
+function renderEks(){
+  var h = '<div class="card"><div class="hd"><span>🖨️ Eksport planów</span><button class="btn" onclick="copyEks()">📋 Kopiuj</button></div><div class="bd">';
+  h += '<div class="row">'
+     + '<button class="btn2' + (eksMode === "klasy" ? " on" : "") + '" onclick="eksModeSet(\'klasy\')">Plany klas</button>'
+     + '<button class="btn2' + (eksMode === "nauczyciele" ? " on" : "") + '" onclick="eksModeSet(\'nauczyciele\')">Plany nauczycieli</button>'
+     + '<button class="btn2' + (eksMode === "csv" ? " on" : "") + '" onclick="eksModeSet(\'csv\')">CSV (Excel)</button>'
+     + "</div>";
+  h += '<textarea id="eksText" class="inp ta big" readonly>' + esc(eksText()) + "</textarea>";
+  h += '<p class="hint">' + (eksMode === "csv" ? "CSV ze średnikami — Excel otworzy w kolumnach (jeśli nie, użyj Dane → Tekst jako kolumny)." : "Tekst o stałej szerokości kolumn — wklejasz do Worda/Excela/maila. Skróty przedmiotów z pierwszych liter.") + "</p>";
+  h += "</div></div>";
+  return h;
+}
+
+/* ==================== start ==================== */
+var firstRun = false;
+try{ if (!localStorage.getItem(LS)) firstRun = true; }catch(e){ firstRun = true; }
+S = loadState();
+if (firstRun) save();
+render();
+if (firstRun) flash("Witaj! 👋 Wczytano nazwy oddziałów SPS nr 7. W zakładce 📋 Dane dodaj nauczycieli i wklej przydziały — dane zostaną wyłącznie u Ciebie.", "ok");
+if ("serviceWorker" in navigator && location.protocol === "https:"){
+  try{ navigator.serviceWorker.register("sw.js").catch(function(){}); }catch(e){}
+}
+</script>
+</body>
+</html>

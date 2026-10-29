@@ -1,0 +1,18 @@
+{
+  "name": "Plan Zajęć — SPS nr 7",
+  "short_name": "Plan Zajęć",
+  "description": "Układanie planów zajęć dla szkoły podstawowej specjalnej — automat + poprawki ręczne. Dane wyłącznie lokalne.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#d97706",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
