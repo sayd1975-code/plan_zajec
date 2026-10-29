@@ -1,4 +1,4 @@
-const CACHE_NAME = "plan-zajec-v6.3";
+const CACHE_NAME = "plan-zajec-v6.3.1";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon.svg"];
 
 self.addEventListener("install", function(e){
