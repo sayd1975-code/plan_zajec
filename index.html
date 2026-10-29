@@ -1102,3 +1102,32 @@ function copyEks(){
   } else fallback();
 }
 function renderEks(){
+  var h = '<div class="card"><div class="hd"><span>🖨️ Eksport planów</span><button class="btn" onclick="copyEks()">📋 Kopiuj</button></div><div class="bd">';
+  h += '<div class="row">'
+     + '<button class="btn2' + (eksMode === "klasy" ? " on" : "") + '" onclick="eksModeSet(\'klasy\')">Plany klas</button>'
+     + '<button class="btn2' + (eksMode === "nauczyciele" ? " on" : "") + '" onclick="eksModeSet(\'nauczyciele\')">Plany nauczycieli</button>'
+     + '<button class="btn2' + (eksMode === "csv" ? " on" : "") + '" onclick="eksModeSet(\'csv\')">CSV (Excel)</button>'
+     + "</div>";
+  h += '<textarea id="eksText" class="inp ta big" readonly>' + esc(eksText()) + "</textarea>";
+  h += '<p class="hint">' + (eksMode === "csv" ? "CSV ze średnikami — Excel otworzy w kolumnach (jeśli nie, użyj Dane → Tekst jako kolumny)." : "Tekst o stałej szerokości kolumn — wklejasz do Worda/Excela/maila. Skróty przedmiotów z pierwszych liter.") + "</p>";
+  h += "</div></div>";
+  return h;
+}
+
+/* ==================== start ==================== */
+var firstRun = false;
+try{ if (!localStorage.getItem(LS)) firstRun = true; }catch(e){ firstRun = true; }
+S = loadState();
+if (firstRun) save();
+var themeBtnEl = document.getElementById("themeBtn");
+if (themeBtnEl) themeBtnEl.onclick = cycleTheme;
+applyTheme();
+if (window.matchMedia){ try{ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function(){ if (themeMode() === "auto") applyTheme(); }); }catch(e){} }
+render();
+if (firstRun) flash("Witaj! 👋 Wczytano nazwy oddziałów SPS nr 7. W zakładce 📋 Dane dodaj nauczycieli i wklej przydziały — dane zostaną wyłącznie u Ciebie.", "ok");
+if ("serviceWorker" in navigator && location.protocol === "https:"){
+  try{ navigator.serviceWorker.register("sw.js").catch(function(){}); }catch(e){}
+}
+</script>
+</body>
+</html>
