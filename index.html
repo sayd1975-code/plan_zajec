@@ -1,4 +1,5 @@
 
+
 <!doctype html>
 <html lang="pl">
 <head>
@@ -160,7 +161,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.5.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.6.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -169,7 +170,7 @@ var NH = 8; // slotów dziennie
 function slotBlocked(settings, s){ return ((settings && settings.blockedSlots) || []).indexOf(s) >= 0; }
 var LS = "plan-zajec-vibe-v1";
 var S = null;
-var tab = "plan", sel = null, viewMode = "class", viewSel = "", ogrT = "", importRows = null, importText = "", eksMode = "klasy";
+var tab = "plan", sel = null, viewMode = "class", viewSel = "", ogrT = "", ogrC = "", importRows = null, importText = "", eksMode = "klasy";
 var confirmKey = null, confirmTimer = null;
 
 /* ==================== tryb jasny/ciemny ==================== */
@@ -202,7 +203,8 @@ function normalize(p){
   if (!p.settings.gapExceptions) p.settings.gapExceptions = "";
   if (p.settings.autBlocks == null) p.settings.autBlocks = true;
   if (!p.settings.pairs) p.settings.pairs = [];
-  p.classes.forEach(function(c){ if (c.rew == null) c.rew = rewFromName(c.name); });
+  if (p.settings.classMaxGaps == null) p.settings.classMaxGaps = 1;
+  p.classes.forEach(function(c){ if (c.rew == null) c.rew = rewFromName(c.name); if (!Array.isArray(c.blocked)) c.blocked = []; });
   p.activities.forEach(function(a){ if (a.group == null) a.group = ""; if (a.withClassId == null) a.withClassId = ""; if (a.link == null) a.link = ""; });
   if (!p.placement) p.placement = {};
   return p;
@@ -271,7 +273,7 @@ function sps7State(){
   var rew =   [2,     2,       2,          2,      2,      1,       2,       1,       3,      2,      3,      3,    1,      3,    1];
   return {
     teachers: [],
-    classes: names.map(function(n, i){ return { id: "c" + (i + 1), name: n, rew: rew[i] }; }),
+    classes: names.map(function(n, i){ return { id: "c" + (i + 1), name: n, rew: rew[i], blocked: [] }; }),
     activities: [],
     placement: {},
     settings: {
@@ -324,6 +326,19 @@ function softPenalty(ls, teachers, classes, settings, placement){
       if (g > mg){ pen += 150 * (g - mg); det.push(tnames[tk] + ": " + g + " okienek w tygodniu (limit " + mg + ")"); }
     }
   }
+  var cg = settings.classMaxGaps == null ? 1 : settings.classMaxGaps;
+  if (cg > 0){
+    var cdays = {};
+    ls.forEach(function(L){ var s = placement[L.id]; if (s == null) return;
+      L.classIds.forEach(function(cid){
+        var dd2 = cdays[cid] = cdays[cid] || [[],[],[],[],[]], dh2 = Math.floor(s / NH), hh3 = s % NH;
+        if (dd2[dh2].indexOf(hh3) < 0) dd2[dh2].push(hh3);
+      }); });
+    for (var ck in cdays){
+      var gc = 0; for (var dc = 0; dc < 5; dc++) gc += dayGaps(cdays[ck][dc]);
+      if (gc > cg){ pen += 150 * (gc - cg); det.push("Klasa " + names[ck] + ": " + gc + " okienek w tygodniu (limit " + cg + ")"); }
+    }
+  }
   var swMid = 0;
   ls.forEach(function(L){ var s = placement[L.id]; if (s == null) return; if (kindL(L) !== "swietl") return; var hh = s % NH; if (hh >= 2 && hh <= 4){ pen += 40; swMid++; } });
   if (swMid) det.push("Świetlica/ŚAW: " + swMid + " lekcji na godzinach 3-5 (wytyczne wolą 1-2 albo 6-8)");
@@ -369,6 +384,7 @@ function softPenalty(ls, teachers, classes, settings, placement){
 function repairSoft(ls, teachers, classes, settings, placement){
   var names = {}; classes.forEach(function(c){ names[c.id] = c.name; });
   var tracksM = {}; classes.forEach(function(c){ tracksM[c.id] = rewTracksOf(c); });
+  var clsBlock = {}; classes.forEach(function(c){ clsBlock[c.id] = {}; (c.blocked || []).forEach(function(sb){ clsBlock[c.id][sb] = true; }); });
   var unavail = {}; teachers.forEach(function(t){ unavail[t.id] = {}; t.unavail.forEach(function(s){ unavail[t.id][s] = true; }); });
   var busyT = {}, busyC = {}, loadT = {}, loadC = {};
   function arr(m, k){ if (!m[k]) m[k] = [0,0,0,0,0]; return m[k]; }
@@ -386,6 +402,7 @@ function repairSoft(ls, teachers, classes, settings, placement){
     if (slotBlocked(settings, s)) return false;
     if (L.teacherId && unavail[L.teacherId] && unavail[L.teacherId][s]) return false;
     if (L.teacherId && busyT[L.teacherId] && busyT[L.teacherId][s]) return false;
+    for (var cb2 = 0; cb2 < L.classIds.length; cb2++) if (clsBlock[L.classIds[cb2]][s]) return false;
     var lk = kindL(L);
     for (var ci = 0; ci < L.classIds.length; ci++){
       var cid = L.classIds[ci];
@@ -510,6 +527,7 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
   var unavail = {}; teachers.forEach(function(t){ unavail[t.id] = {}; t.unavail.forEach(function(s){ unavail[t.id][s] = true; }); });
   var busyT = {}, busyC = {}, loadT = {}, loadC = {}, subjDay = {}, atSlot = {}, tDay = {};
   var tracksM = {}; classes.forEach(function(c){ tracksM[c.id] = rewTracksOf(c); });
+  var clsBlock = {}; classes.forEach(function(c){ clsBlock[c.id] = {}; (c.blocked || []).forEach(function(sb){ clsBlock[c.id][sb] = true; }); });
   function dayOf(s){ return Math.floor(s / NH); }
   function arr(m, k){ if (!m[k]) m[k] = [0,0,0,0,0]; return m[k]; }
   function daySlots(tid){ if (!tDay[tid]) tDay[tid] = [[],[],[],[],[]]; return tDay[tid]; }
@@ -548,6 +566,7 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
     if (L.teacherId && unavail[L.teacherId] && unavail[L.teacherId][s]) return false;
     if (L.teacherId && busyT[L.teacherId] && busyT[L.teacherId][s]) return false;
     if (L.teacherId && arr(loadT, L.teacherId)[d] >= settings.teacherMaxPerDay) return false;
+    for (var cbi = 0; cbi < L.classIds.length; cbi++) if (clsBlock[L.classIds[cbi]][s]) return false;
     var lk = kindL(L);
     for (var ci = 0; ci < L.classIds.length; ci++){
       var cid = L.classIds[ci];
@@ -693,6 +712,7 @@ function findViolations(ls, teachers, classes, placement, settings){
   var errs = [];
   var tM = {}, cM = {};
   teachers.forEach(function(t){ tM[t.id] = t; }); classes.forEach(function(c){ cM[c.id] = c; });
+  var cbM = {}; classes.forEach(function(c){ cbM[c.id] = c.blocked || []; });
   function tNm(id){ return tM[id] ? tM[id].name : id; }
   function cNm(id){ return cM[id] ? cM[id].name : id; }
   var slotT = {}, byClsSlot = {}, loadT = {}, loadC = {};
@@ -701,6 +721,7 @@ function findViolations(ls, teachers, classes, placement, settings){
     var L = ls[i], s = placement[L.id]; if (s == null) continue;
     var d = Math.floor(s / NH), h = s % NH;
     if (tM[L.teacherId] && tM[L.teacherId].unavail.indexOf(s) >= 0) errs.push(tNm(L.teacherId) + " nie jest dostępny/na: " + DAYS[d] + ", lekcja " + (h + 1));
+    for (var cbi2 = 0; cbi2 < L.classIds.length; cbi2++) if (cbM[L.classIds[cbi2]] && cbM[L.classIds[cbi2]].indexOf(s) >= 0) errs.push("Klasa " + cNm(L.classIds[cbi2]) + " nie może mieć wtedy lekcji (blokada oddziału, np. przewozy): " + DAYS[d] + ", lekcja " + (h + 1));
     if (slotBlocked(settings, s)) errs.push("Zablokowana godzina: " + tNm(L.teacherId) + " (" + cNm(L.classIds[0]) + ") — " + DAYS[d] + ", lekcja " + (h + 1) + " jest wyłączona w Zasadach planu");
     if (L.teacherId){
       var kT = L.teacherId + "|" + s;
@@ -1366,6 +1387,16 @@ function doImport(){
 /* ---------- zakładka OGRANICZENIA ---------- */
 function ogrLink(id){ ogrT = id; tab = "ogr"; render(); }
 function ogrSet(id){ ogrT = id; render(); }
+function ogrCSet(id){ ogrC = id; render(); }
+function toggC(s){
+  var c = null; S.classes.forEach(function(x){ if (x.id === ogrC) c = x; });
+  if (!c) return;
+  c.blocked = c.blocked || [];
+  var has = c.blocked.indexOf(s) >= 0;
+  if (has) c.blocked = c.blocked.filter(function(x){ return x !== s; });
+  else c.blocked.push(s);
+  save(); render();
+}
 function toggU(s){
   var t = null; S.teachers.forEach(function(x){ if (x.id === ogrT) t = x; });
   if (!t) return;
@@ -1403,6 +1434,7 @@ function toggleBlock(s){
   save(); render();
 }
 function setMaxGaps(v){ S.settings.maxGaps = Math.max(0, Math.min(20, parseInt(v) || 0)); save(); render(); }
+function setClassMaxGaps(v){ S.settings.classMaxGaps = Math.max(0, Math.min(20, parseInt(v) || 0)); save(); render(); }
 function setGapExc(v){ S.settings.gapExceptions = v; save(); }
 function addPair(){ S.settings.pairs.push({ cls: "", a: "", b: "" }); save(); render(); }
 function setPair(i, k, v){ if (S.settings.pairs[i]) S.settings.pairs[i][k] = v; save(); }
@@ -1436,6 +1468,29 @@ function renderOgr(){
       h += "</tr>";
     }
     h += "</table></div>";
+  }
+  h += "</div></div>";
+  h += '<div class="card"><div class="hd">🚌 Blokady oddziału — np. przewozy, dojazdy (kliknij godzinę, żeby zablokować)</div><div class="bd">';
+  if (!S.classes.length) h += '<p class="hint">Najpierw dodaj oddziały w zakładce Dane.</p>';
+  else {
+    var cidO = S.classes.some(function(c){ return c.id === ogrC; }) ? ogrC : (S.classes[0] ? S.classes[0].id : "");
+    ogrC = cidO;
+    var cO = null; S.classes.forEach(function(x){ if (x.id === cidO) cO = x; });
+    h += '<div class="row"><span class="lbl">Oddział:</span><select class="inp" onchange="ogrCSet(this.value)">' + opts(S.classes, cidO) + "</select></div>";
+    var ltC = lessonTimes();
+    h += '<div style="overflow-x:auto"><table class="unav"><tr><th></th>';
+    for (var iC = 0; iC < NH; iC++) h += "<th>lek. " + (iC + 1) + "<br><span class='sub'>" + esc(ltC[iC]) + "</span></th>";
+    h += "</tr>";
+    for (var dC = 0; dC < 5; dC++){
+      h += '<tr><td class="day">' + DAYS[dC] + "</td>";
+      for (var hhC = 0; hhC < NH; hhC++){
+        var sC = dC * NH + hhC, offC = cO.blocked.indexOf(sC) >= 0;
+        h += '<td><button class="' + (offC ? "uoff" : "uon") + '" onclick="toggC(' + sC + ')">' + (offC ? "✕" : "✓") + "</button></td>";
+      }
+      h += "</tr>";
+    }
+    h += "</table></div>";
+    h += '<p class="hint">Blokada = ta klasa nie może mieć wtedy lekcji. Przykłady: dzieci dojeżdżają autobusem — zablokuj pierwszą lekcję; wyjazd zaraz po lekcjach — zablokuj ostatnie. Blokady pilnuje automat i walidator.</p>';
   }
   h += "</div></div>";
   h += '<div class="card"><div class="hd">🕐 Godziny lekcyjne</div><div class="bd"><div class="ltcnt">';
@@ -1478,6 +1533,7 @@ function renderOgr(){
   h += '</div>';
   h += '<div class="row"><label style="display:flex;gap:7px;align-items:center;cursor:pointer"><input type="checkbox"' + (S.settings.autBlocks ? " checked" : "") + ' onchange="setChk(\'autBlocks\',this.checked)"> <span>Klasy AUT: godziny wychowawcy w blokach „jedna po drugie"</span></label></div>';
   h += '<div class="row"><span class="lbl">Maks. okienek nauczyciela / tydzień:</span><input class="inp" type="number" min="0" max="20" style="width:70px" value="' + (S.settings.maxGaps || 0) + '" onchange="setMaxGaps(this.value)"><span class="hint" style="margin:0">0 = bez limitu</span></div>';
+  h += '<div class="row"><span class="lbl">Maks. okienek klasy / tydzień:</span><input class="inp" type="number" min="0" max="20" style="width:70px" value="' + (S.settings.classMaxGaps == null ? 1 : S.settings.classMaxGaps) + '" onchange="setClassMaxGaps(this.value)"><span class="hint" style="margin:0">0 = bez limitu</span></div>';
   h += '<div class="row" style="flex-wrap:wrap"><span class="lbl" style="align-self:flex-start">Wyjątki od limitu okienek:</span><input class="inp" style="flex:1;min-width:220px" placeholder="nazwiska rozdzielone przecinkami" value="' + esc(S.settings.gapExceptions || "") + '" onchange="setGapExc(this.value)"></div>';
   h += '<p class="hint">Wyjątki zapisują się wyłącznie w tej przeglądarce — nie wychodzą nigdzie poza urządzenie.</p>';
   h += '<div class="row"><span class="lbl">Pary przedmiotów „jedna po drugiej":</span></div>';
@@ -1665,15 +1721,81 @@ function copyEks(){
     navigator.clipboard.writeText(ta.value).then(function(){ flash("Skopiowano do schowka.", "ok"); }, fallback);
   } else fallback();
 }
+function planszeHtml(){
+  var ls = lessons(), placement = S.placement, bySlot = lessonsBySlot(ls, placement);
+  var lt = lessonTimes();
+  var days = ["Poniedziałek", "Wtorek", "Środa", "Czwartek", "Piątek"];
+  var d = new Date(), stan = d.getDate() + "." + (d.getMonth() + 1) + "." + d.getFullYear();
+  var css = "<style>"
+    + "@page { size: A3 landscape; margin: 8mm; }"
+    + "* { box-sizing: border-box; margin: 0; padding: 0; }"
+    + "body { font-family: Arial, 'Segoe UI', sans-serif; background: #f2f4f7; }"
+    + ".bar { position: sticky; top: 0; z-index: 9; background: #1f2d3d; color: #fff; padding: 4mm 8mm; display: flex; gap: 6mm; align-items: center; flex-wrap: wrap; }"
+    + ".bar button { font-size: 5mm; padding: 2mm 6mm; border: 0; border-radius: 2mm; background: #4a90d9; color: #fff; cursor: pointer; }"
+    + ".bar .tip { font-size: 3.6mm; opacity: .85; }"
+    + "@media print { .bar { display: none; } body { background: #fff; } }"
+    + ".pl { width: 400mm; padding: 10mm; background: #fff; margin: 8mm auto; page-break-after: always; }"
+    + ".pl:last-child { page-break-after: auto; }"
+    + "h1 { font-size: 28mm; text-align: center; letter-spacing: 2mm; }"
+    + ".sub { text-align: center; font-size: 8mm; margin: 3mm 0 8mm; color: #333; }"
+    + ".cls { text-align: center; font-size: 14mm; font-weight: bold; margin-bottom: 6mm; }"
+    + "table { width: 100%; border-collapse: collapse; }"
+    + "th, td { border: 1mm solid #222; font-size: 8.5mm; padding: 3mm; text-align: center; vertical-align: middle; }"
+    + "th { font-size: 10mm; background: #e8edf3; }"
+    + "th.hr { width: 48mm; }"
+    + "td.empty { color: #ccc; }"
+    + "hr.sep { border: 0; border-top: 0.8mm dashed #999; margin: 2mm 0; }"
+    + "td i { display: block; font-style: normal; font-size: 6.5mm; color: #444; margin-top: 1.5mm; }"
+    + "</style>";
+  var body = "";
+  S.classes.forEach(function(c){
+    body += '<section class="pl">'
+      + '<div class="cls">Oddział: ' + esc(c.name) + "</div>"
+      + "<h1>PLAN LEKCJI</h1>"
+      + '<div class="sub">Szkoła Podstawowa nr 7 Specjalna w Katowicach · 2026/2027 · stan na ' + stan + "</div>"
+      + '<table><tr><th class="hr">Godzina</th>';
+    for (var di = 0; di < 5; di++) body += "<th>" + days[di] + "</th>";
+    body += "</tr>";
+    for (var h2 = 0; h2 < NH; h2++){
+      body += '<tr><th class="hr">' + esc(lt[h2]) + "–" + esc(endOfLesson(lt[h2])) + "</th>";
+      for (var di2 = 0; di2 < 5; di2++){
+        var sl = di2 * NH + h2, cell = [];
+        (bySlot[sl] || []).forEach(function(L){ if (L.classIds.indexOf(c.id) >= 0) cell.push(L); });
+        if (!cell.length) body += '<td class="empty">·</td>';
+        else {
+          body += "<td>";
+          cell.forEach(function(L, ix){
+            if (ix) body += "<hr class='sep'>";
+            body += esc(L.subject) + "<i>" + esc(tName(L.teacherId)) + "</i>";
+          });
+          body += "</td>";
+        }
+      }
+      body += "</tr>";
+    }
+    body += "</table></section>";
+  });
+  return '<!DOCTYPE html><html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Plansze planów lekcji</title>' + css + "</head><body>"
+    + '<div class="bar"><button onclick="window.print()">🖨️ DRUKUJ / zapisz PDF</button><span class="tip">Drukuj: A3 lub A2 poziomo, marginesy Minimalne; przy A2 ustaw skalowanie „Dopasuj do strony".</span></div>'
+    + body + "</body></html>";
+}
+function openPlansze(){
+  var w = window.open("", "_blank");
+  if (!w){ flash("Przeglądarka zablokowała otwieranie nowych kart — zezwól na wyskakujące okna i spróbuj ponownie.", "err"); return; }
+  w.document.write(planszeHtml());
+  w.document.close();
+}
 function renderEks(){
   var h = '<div class="card"><div class="hd"><span>🖨️ Eksport planów</span><button class="btn" onclick="copyEks()">📋 Kopiuj</button></div><div class="bd">';
   h += '<div class="row">'
      + '<button class="btn2' + (eksMode === "klasy" ? " on" : "") + '" onclick="eksModeSet(\'klasy\')">Plany klas</button>'
      + '<button class="btn2' + (eksMode === "nauczyciele" ? " on" : "") + '" onclick="eksModeSet(\'nauczyciele\')">Plany nauczycieli</button>'
      + '<button class="btn2' + (eksMode === "csv" ? " on" : "") + '" onclick="eksModeSet(\'csv\')">CSV (Excel)</button>'
+     + '<button class="btn2" onclick="openPlansze()">🖼️ Plansze A3/A2</button>'
      + "</div>";
   h += '<textarea id="eksText" class="inp ta big" readonly>' + esc(eksText()) + "</textarea>";
   h += '<p class="hint">' + (eksMode === "csv" ? "CSV ze średnikami — Excel otworzy w kolumnach (jeśli nie, użyj Dane → Tekst jako kolumny)." : "Tekst o stałej szerokości kolumn — wklejasz do Worda/Excela/maila. Skróty przedmiotów z pierwszych liter.") + "</p>";
+  h += '<p class="hint">🖼️ Plansze A3/A2: otwierają się w nowej karcie — po jednym wielkim planie na oddział, do wydruku na korytarz (duże litery, pełne nazwiska). Najlepiej drukować z komputera.</p>';
   h += "</div></div>";
   return h;
 }
