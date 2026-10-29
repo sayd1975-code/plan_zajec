@@ -165,7 +165,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 5.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 5.1.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -602,6 +602,7 @@ function parseImportText(text){
   var lines = text.split(/\r?\n/).map(function(l){ return l.trim(); }).filter(Boolean);
   function clean(x){ return x.trim().replace(/^["'„»]+/, "").replace(/["'«»]+$/, ""); }
   var lastTeacher = null;
+  var colMap = null, skipSheet = false, sheetCount = 0;
   function isTeacherHeading(line){
     if (/\d/.test(line)) return null;
     var first = line.split(/\s+/)[0].toLowerCase();
@@ -613,7 +614,38 @@ function parseImportText(text){
   }
   for (var li = 0; li < lines.length; li++){
     var raw = lines[li], low = raw.toLowerCase();
-    if (low.indexOf("nauczyciel") >= 0 && (low.indexOf("przedmiot") >= 0 || low.indexOf("klasa") >= 0 || low.indexOf("godzin") >= 0)) continue;
+    if (raw.indexOf("#sheet:") === 0){
+      sheetCount++;
+      colMap = null;
+      skipSheet = /dyspozycyj|zasad|wytycz|uwag|instruk|legenda|harmonogram|opis/.test(raw.slice(7).trim().toLowerCase());
+      continue;
+    }
+    if (skipSheet) continue;
+    var lowT = raw.replace(/\t/g, " ").toLowerCase();
+    if (lowT.indexOf("nauczyciel") >= 0 && (lowT.indexOf("przedmiot") >= 0 || lowT.indexOf("klasa") >= 0 || lowT.indexOf("godzin") >= 0)){
+      var hp = raw.split("\t").map(clean);
+      var hmap = null;
+      for (var hci = 0; hci < hp.length; hci++){
+        var hf = hp[hci].toLowerCase().replace(/\s+/g, " ").trim();
+        if (!hf) continue;
+        if (/nauczyciel/.test(hf)){
+          if (!hmap) hmap = {};
+          if (/aktualn|bież|właśc|nowy/.test(hf) || hmap.teacherIdx == null) hmap.teacherIdx = hci;
+        }
+      }
+      if (hmap && hmap.teacherIdx != null){
+        for (var hcj = 0; hcj < hp.length; hcj++){
+          var hfj = hp[hcj].toLowerCase().replace(/\s+/g, " ").trim();
+          if (!hfj || /nauczyciel/.test(hfj)) continue;
+          if (/^klas|^oddzia/.test(hfj)) hmap.classIdx = hcj;
+          else if (/przedmiot|zaję|zajec/.test(hfj)) hmap.subjectIdx = hcj;
+          else if (/godzin/.test(hfj)) hmap.hoursIdx = hcj;
+          else if (/uwag|grupa/.test(hfj)) hmap.noteIdx = hcj;
+        }
+        if (hmap.subjectIdx != null) colMap = hmap;
+      }
+      continue;
+    }
     var line = raw.replace(/^\s*(\d{1,3}[.)]\s+|[-•*·–—]\s*)/, "").trim();
     var parts = line.indexOf("\t") >= 0 ? line.split("\t") : line.indexOf(";") >= 0 ? line.split(";") : line.indexOf(",") >= 0 ? line.split(",") : null;
     if (!parts){
@@ -630,41 +662,63 @@ function parseImportText(text){
       rows.push({ teacher: fields[0].slice(0, 40), subject: "", className: "", hours: 0, status: "err", note: "za mało kolumn w wierszu" });
       continue;
     }
-    var hoursIdx = -1;
-    for (var ii = fields.length - 1; ii >= 0; ii--) if (/^\d{1,2}\s*(h|godz\.?|g)?$/i.test(fields[ii])){ hoursIdx = ii; break; }
-    var hours = hoursIdx >= 0 ? Math.max(1, parseInt(fields[hoursIdx], 10)) : 1;
-    var noteParts = [];
-    if (hoursIdx < 0) noteParts.push("brak godzin — przyjęto 1");
-    var rest = fields.filter(function(_, idx){ return idx !== hoursIdx; });
-    var classIdx = -1;
-    for (var ci = 0; ci < rest.length; ci++){
-      var f = rest[ci].replace(/^klasa\s+/i, "").trim();
-      var matchesExisting = S.classes.some(function(c){ return c.name.toLowerCase() === f.toLowerCase(); });
-      var classLike = /^\d/.test(f) && f.length <= 14;
-      if (matchesExisting || classLike){ classIdx = ci; break; }
+    var teacher = "", short = null, subject = "", className = "", hours = 1, noteParts = [];
+    var usedMap = false;
+    if (parts && colMap && parts.length > colMap.subjectIdx && parts.length > colMap.teacherIdx && (colMap.classIdx == null || parts.length > colMap.classIdx)){
+      var fC = parts.map(clean);
+      teacher = (fC[colMap.teacherIdx] || "").trim();
+      subject = (fC[colMap.subjectIdx] || "").trim();
+      className = colMap.classIdx != null ? (fC[colMap.classIdx] || "").trim() : "";
+      if (colMap.hoursIdx != null){
+        var hv2 = parseInt((fC[colMap.hoursIdx] || "").replace(",", "."), 10);
+        hours = isNaN(hv2) ? 1 : Math.max(1, hv2);
+        if (isNaN(hv2)) noteParts.push("brak godzin — przyjęto 1");
+      }
+      if (/^[-–—.,\s]*$/.test(teacher)) teacher = "";
+      if (/^[-–—.,\s]*$/.test(subject)) subject = "";
+      if (colMap.noteIdx != null && parts.length > colMap.noteIdx && (fC[colMap.noteIdx] || "").trim()) noteParts.push("uwagi: " + (fC[colMap.noteIdx] || "").trim().slice(0, 70));
+      usedMap = true;
     }
-    var className = "";
-    if (classIdx >= 0){
-      className = rest[classIdx].replace(/^klasa\s+/i, "").trim();
-      rest = rest.filter(function(_, idx){ return idx !== classIdx; });
-    } else noteParts.push("nie rozpoznano klasy");
-    var teacher = "", short = null, subject = "";
-    var teacherIdx = -1;
-    for (var ti = 0; ti < rest.length; ti++){
-      var found = S.teachers.some(function(t){ return samePerson(t.name, rest[ti]); });
-      if (found){ teacherIdx = ti; break; }
-    }
-    if (teacherIdx >= 0){
-      teacher = rest[teacherIdx];
-      subject = rest.filter(function(_, idx){ return idx !== teacherIdx; }).join(" ").trim();
-    } else if (rest.length >= 2){
-      teacher = rest[0]; subject = rest.slice(1).join(" ").trim();
-    } else if (rest.length === 1 && lastTeacher){
-      subject = rest[0]; teacher = lastTeacher;
-      noteParts.push("nauczyciel z poprzedniego wiersza (scalone komórki)");
+    if (!usedMap){
+      var hoursIdx = -1;
+      for (var ii = fields.length - 1; ii >= 0; ii--) if (/^\d{1,2}\s*(h|godz\.?|g)?$/i.test(fields[ii])){ hoursIdx = ii; break; }
+      hours = hoursIdx >= 0 ? Math.max(1, parseInt(fields[hoursIdx], 10)) : 1;
+      if (hoursIdx < 0) noteParts.push("brak godzin — przyjęto 1");
+      var rest = fields.filter(function(_, idx){ return idx !== hoursIdx; });
+      var classIdx = -1;
+      for (var ci = 0; ci < rest.length; ci++){
+        var f = rest[ci].replace(/^klasa\s+/i, "").trim();
+        var matchesExisting = S.classes.some(function(c){ return c.name.toLowerCase() === f.toLowerCase(); });
+        var classLike = /^\d/.test(f) && f.length <= 14;
+        if (matchesExisting || classLike){ classIdx = ci; break; }
+      }
+      if (classIdx >= 0){
+        className = rest[classIdx].replace(/^klasa\s+/i, "").trim();
+        rest = rest.filter(function(_, idx){ return idx !== classIdx; });
+      } else noteParts.push("nie rozpoznano klasy");
+      var teacherIdx = -1;
+      for (var ti = 0; ti < rest.length; ti++){
+        var found = S.teachers.some(function(t){ return samePerson(t.name, rest[ti]); });
+        if (found){ teacherIdx = ti; break; }
+      }
+      if (teacherIdx >= 0){
+        teacher = rest[teacherIdx];
+        subject = rest.filter(function(_, idx){ return idx !== teacherIdx; }).join(" ").trim();
+      } else if (rest.length >= 2){
+        teacher = rest[0]; subject = rest.slice(1).join(" ").trim();
+      } else if (rest.length === 1 && lastTeacher){
+        subject = rest[0]; teacher = lastTeacher;
+        noteParts.push("nauczyciel z poprzedniego wiersza (scalone komórki)");
+      }
     }
     var mm = /^(.*?)\s*\(([^)]+)\)\s*$/.exec(teacher);
     if (mm){ teacher = mm[1].trim(); short = mm[2].trim(); }
+    if (className){
+      var canon = null;
+      S.classes.forEach(function(c){ if (c.name.toLowerCase() === className.toLowerCase()) canon = c.name; });
+      if (!canon) S.classes.forEach(function(c){ if (normName(c.name) === normName(className)) canon = c.name; });
+      if (canon) className = canon;
+    }
     var status = "ok";
     var teacherExists = S.teachers.some(function(t){ return samePerson(t.name, teacher); });
     var classExists = className !== "" && S.classes.some(function(c){ return c.name.toLowerCase() === className.toLowerCase(); });
@@ -682,6 +736,9 @@ function parseImportText(text){
       if (!teacherExists){ status = "warn"; noteParts.push("nowy nauczyciel — zostanie dodany"); }
       if (!classExists){ status = "warn"; noteParts.push("nowa klasa — zostanie dodana"); }
     }
+    if (hours > 30){ status = "err"; noteParts.push("podejrzanie dużo godzin (" + hours + ") — wygląda na wiersz podsumowania/pensum"); }
+    if (teacher && /\d/.test(teacher)){ status = "err"; noteParts.push("nazwisko nauczyciela zawiera cyfry — śmieciowy wiersz"); }
+    if (teacher && !/^WAKAT/i.test(teacher) && !/^[A-ZĄĆĘŁŃÓŚŹŻ]/.test(teacher)){ status = "err"; noteParts.push("nazwa nauczyciela nie wygląda na nazwisko"); }
     if (teacher) lastTeacher = teacher;
     rows.push({ teacher: teacher, short: short, subject: subject, className: className, hours: hours, status: status, note: noteParts.join("; ") || null });
   }
@@ -854,13 +911,16 @@ function xlsxToTsv(files){
   var sheets = [];
   wb.replace(/<sheet[^>]*\/?>/g, function(m){
     var rid = /r:id="([^"]+)"/.exec(m);
-    if (rid && relMap[rid[1]]) sheets.push("xl/" + relMap[rid[1]]);
+    var nm = /name="([^"]*)"/.exec(m);
+    if (rid && relMap[rid[1]]) sheets.push({ path: "xl/" + relMap[rid[1]], name: nm ? nm[1] : "" });
     return m;
   });
-  if (!sheets.length) sheets = Object.keys(files).filter(function(k){ return /^xl\/worksheets\/.*\.xml$/.test(k); }).sort();
+  if (!sheets.length) sheets = Object.keys(files).filter(function(k){ return /^xl\/worksheets\/.*\.xml$/.test(k); }).sort().map(function(p){ return { path: p, name: "" }; });
   var out = [];
-  sheets.forEach(function(path){
+  sheets.forEach(function(sh){
+    var path = sh.path;
     if (!files[path]) return;
+    out.push("#sheet: " + sh.name);
     txt(files[path]).replace(/<row(?:\s[^>]*)?>([\s\S]*?)<\/row>/g, function(_, inner){
       var cells = [];
       inner.replace(/<c\s([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g, function(m2, attrs, content){
@@ -1070,6 +1130,8 @@ function doImport(){
   if (!importRows) return;
   var rows = importRows.filter(function(r){ return r.status !== "err" && r.teacher && r.className; });
   if (!rows.length){ flash("Brak wierszy do zaimportowania.", "err"); return; }
+  var hoursSum = rows.reduce(function(acc, r){ return acc + (r.hours || 1); }, 0);
+  if (hoursSum > 1200){ flash("⛔ Suma godzin do zaimportowania = " + hoursSum + ". To wygląda na zły plik lub tabele podsumowujące (realnie szkoła ma ok. 700). Import przerwany.", "err"); return; }
   var addedT = 0, addedC = 0;
   rows.forEach(function(r){
     var t = null;
