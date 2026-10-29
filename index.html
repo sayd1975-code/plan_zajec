@@ -198,7 +198,7 @@ function normalize(p){
   if (!p.settings.gapExceptions) p.settings.gapExceptions = "";
   if (p.settings.autBlocks == null) p.settings.autBlocks = true;
   if (!p.settings.pairs) p.settings.pairs = [];
-  p.classes.forEach(function(c){ if (c.rew == null || parseInt(c.rew, 10) < 4) c.rew = 4; });
+  p.classes.forEach(function(c){ if (c.rew == null) c.rew = 2; });
   p.activities.forEach(function(a){ if (a.group == null) a.group = ""; });
   if (!p.placement) p.placement = {};
   return p;
@@ -238,7 +238,7 @@ function guessKind(subject){
   if (/rewalid|terapi|integracj|logoped|korekcyj|zkk|socjoterap|psycholog|pedagog|trening|specjalist|relaks|gimnastyk/.test(s)) return "rew";
   return "dyd";
 }
-function rewTracksOf(c){ var r = c ? parseInt(c.rew, 10) : NaN; return (r >= 1 && r <= 6) ? r : 4; }
+function rewTracksOf(c){ var r = c ? parseInt(c.rew, 10) : NaN; return (r >= 1 && r <= 6) ? r : 2; }
 function classClash(lk, ok, lg, og){
   if (lk === "dyd" && ok === "dyd") return !(lg && og && lg !== og);
   if (lk === "dyd" || ok === "dyd") return true;
@@ -260,7 +260,7 @@ function hoursBy(key){ var m = {}; S.activities.forEach(function(a){ m[a[key]] =
 /* ==================== dane startowe ==================== */
 function sps7State(){
   var names = ["1a","1a b","2a AUT","2b AUT (m)","3a AUT","3b AUT","3c AUT","4a AUT","5 ZET","5a M","6 AUT","6a M","6b","7 AUT","7a","8 ZET"];
-  var rew =   [4,     4,      4,       4,          4,      4,      4,       4,       4,       4,      4,      4,      4,    4,      4,    4];
+  var rew =   [2,     2,      2,       2,          2,      2,      1,       2,       1,       3,      2,      3,      3,    1,      3,    1];
   return {
     teachers: [],
     classes: names.map(function(n, i){ return { id: "c" + (i + 1), name: n, rew: rew[i] }; }),
@@ -387,7 +387,7 @@ function repairSoft(ls, teachers, classes, settings, placement){
         if (kindL(O) === "rew") rewN++;
         if (classClash(lk, kindL(O), L.group, O.group)) return false;
       }
-      if (lk === "rew" && rewN + 1 > (tracksM[cid] || 4)) return false;
+      if (lk === "rew" && rewN + 1 > (tracksM[cid] || 2)) return false;
     }
     return true;
   }
@@ -549,7 +549,7 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
         if (kindL(O) === "rew") rewN++;
         if (classClash(lk, kindL(O), L.group, O.group)) return false;
       }
-      if (lk === "rew" && rewN + 1 > (tracksM[cid] || 4)) return false;
+      if (lk === "rew" && rewN + 1 > (tracksM[cid] || 2)) return false;
       var slotTaken = others.length > 0;
       if (!slotTaken && arr(loadC, cid)[d] >= settings.classMaxPerDay) return false;
     }
@@ -1275,7 +1275,7 @@ function setLimit(k, v){
 }
 function setRew(cid, v){
   var c = null; S.classes.forEach(function(x){ if (x.id === cid) c = x; });
-  if (c){ var r = parseInt(v, 10); if (!(r >= 1 && r <= 6)) r = 4; c.rew = r; save(); render(); }
+  if (c){ var r = parseInt(v, 10); if (!(r >= 1 && r <= 6)) r = 2; c.rew = r; save(); render(); }
 }
 function setChk(k, v){ S.settings[k] = !!v; save(); render(); }
 function setMaxGaps(v){ S.settings.maxGaps = Math.max(0, Math.min(20, parseInt(v) || 0)); save(); render(); }
@@ -1325,16 +1325,15 @@ function renderOgr(){
      + '<label class="lbl" style="margin-left:14px">Maks. lekcji klasy dziennie:</label><input class="inp" type="number" style="width:70px" value="' + S.settings.classMaxPerDay + '" onchange="setLimit(\'classMaxPerDay\',this.value)">'
      + '</div><p class="hint">Zmiana limitów obowiązuje przy kolejnym generowaniu i ruchach ręcznych.</p></div></div>';
   h += '<div class="card"><div class="hd">🚻 Tory rewalidacji — ile zajęć równolegle w klasie</div><div class="bd">';
-  h += '<p class="hint">Rewalidacje mogą się nakładać w jednej klasie, ale nie więcej niż liczba torów. W SPS nr 7 tory muszą być co najmniej 4. Zajęcia dydaktyczne nie łączą się z niczym — chyba że dotyczą różnych grup (kolumna „grupa" w Dane).</p>';
+  h += '<p class="hint">Rewalidacje mogą się nakładać w jednej klasie, ale nie więcej niż liczba torów (1–6). Zajęcia dydaktyczne nie łączą się z niczym — chyba że dotyczą różnych grup (kolumna „grupa" w Dane).</p>';
   if (!S.classes.length) h += '<p class="hint">Brak oddziałów — dodaj je w zakładce Dane.</p>';
   S.classes.forEach(function(c){
     var tr = rewTracksOf(c);
+    var lbl = ["1 tor","2 tory","3 tory","4 tory","5 torów","6 torów"];
     h += '<div class="row"><span class="lbl" style="min-width:110px">' + esc(c.name) + '</span>'
-       + '<select class="inp" style="width:auto" onchange="setRew(\'' + c.id + '\',this.value)">'
-       + '<option value="4"' + (tr === 4 ? " selected" : "") + '>4 tory</option>'
-       + '<option value="5"' + (tr === 5 ? " selected" : "") + '>5 torów</option>'
-       + '<option value="6"' + (tr === 6 ? " selected" : "") + '>6 torów</option>'
-       + "</select></div>";
+       + '<select class="inp" style="width:auto" onchange="setRew(\'' + c.id + '\',this.value)">';
+    for (var tw = 1; tw <= 6; tw++) h += '<option value="' + tw + '"' + (tr === tw ? " selected" : "") + '>' + lbl[tw - 1] + '</option>';
+    h += "</select></div>";
   });
   h += '</div></div>';
   h += '<div class="card"><div class="hd">📏 Zasady planu (wg wytycznych)</div><div class="bd">';
