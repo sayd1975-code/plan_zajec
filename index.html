@@ -160,7 +160,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.3.1.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.4.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -203,7 +203,7 @@ function normalize(p){
   if (p.settings.autBlocks == null) p.settings.autBlocks = true;
   if (!p.settings.pairs) p.settings.pairs = [];
   p.classes.forEach(function(c){ if (c.rew == null) c.rew = rewFromName(c.name); });
-  p.activities.forEach(function(a){ if (a.group == null) a.group = ""; if (a.withClassId == null) a.withClassId = ""; });
+  p.activities.forEach(function(a){ if (a.group == null) a.group = ""; if (a.withClassId == null) a.withClassId = ""; if (a.link == null) a.link = ""; });
   if (!p.placement) p.placement = {};
   return p;
 }
@@ -260,8 +260,8 @@ function buildLessons(acts){
 function lessons(){ return buildLessons(S.activities); }
 function tById(){ var m = {}; S.teachers.forEach(function(t){ m[t.id] = t; }); return m; }
 function cById(){ var m = {}; S.classes.forEach(function(c){ m[c.id] = c; }); return m; }
-function tName(id){ var t = tById()[id]; return t ? t.name : "?"; }
-function tShort(id){ var t = tById()[id]; return t ? t.short : "?"; }
+function tName(id){ var t = tById()[id]; return t ? t.name : (id ? "?" : "—"); }
+function tShort(id){ var t = tById()[id]; return t ? t.short : (id ? "?" : "—"); }
 function cName(id){ var c = cById()[id]; return c ? c.name : "?"; }
 function hoursBy(key){ var m = {}; S.activities.forEach(function(a){ m[a[key]] = (m[a[key]] || 0) + a.hours; }); return m; }
 
@@ -319,11 +319,14 @@ function softPenalty(ls, teachers, classes, settings, placement){
   ls.forEach(function(L){ var s = placement[L.id]; if (s == null) return;
     (tdays[L.teacherId] = tdays[L.teacherId] || [[],[],[],[],[]])[Math.floor(s / NH)].push(s % NH); });
   for (var tk in tdays){
-    if (mg > 0 && !isGapExc(tnames[tk], settings)){
+    if (tk && mg > 0 && !isGapExc(tnames[tk], settings)){
       var g = 0; for (var d = 0; d < 5; d++) g += dayGaps(tdays[tk][d]);
       if (g > mg){ pen += 150 * (g - mg); det.push(tnames[tk] + ": " + g + " okienek w tygodniu (limit " + mg + ")"); }
     }
   }
+  var swMid = 0;
+  ls.forEach(function(L){ var s = placement[L.id]; if (s == null) return; if (kindL(L) !== "swietl") return; var hh = s % NH; if (hh >= 2 && hh <= 4){ pen += 40; swMid++; } });
+  if (swMid) det.push("Świetlica/ŚAW: " + swMid + " lekcji na godzinach 3-5 (wytyczne wolą 1-2 albo 6-8)");
   if (settings.autBlocks){
     var cnt = {};
     ls.forEach(function(L){ var c0 = L.classIds[0]; if (/aut/i.test(names[c0] || "")) { cnt[c0] = cnt[c0] || {}; cnt[c0][L.teacherId] = (cnt[c0][L.teacherId] || 0) + 1; } });
@@ -381,8 +384,8 @@ function repairSoft(ls, teachers, classes, settings, placement){
   function freeFor(L, s){
     var d = Math.floor(s / NH), h = s % NH;
     if (slotBlocked(settings, s)) return false;
-    if (unavail[L.teacherId] && unavail[L.teacherId][s]) return false;
-    if (busyT[L.teacherId] && busyT[L.teacherId][s]) return false;
+    if (L.teacherId && unavail[L.teacherId] && unavail[L.teacherId][s]) return false;
+    if (L.teacherId && busyT[L.teacherId] && busyT[L.teacherId][s]) return false;
     var lk = kindL(L);
     for (var ci = 0; ci < L.classIds.length; ci++){
       var cid = L.classIds[ci];
@@ -419,7 +422,7 @@ function repairSoft(ls, teachers, classes, settings, placement){
   function dayOK(L, s0, s1){
     var d0 = Math.floor(s0 / NH), d1 = Math.floor(s1 / NH);
     if (d0 === d1) return true;
-    if (arr(loadT, L.teacherId)[d1] >= settings.teacherMaxPerDay) return false;
+    if (L.teacherId && arr(loadT, L.teacherId)[d1] >= settings.teacherMaxPerDay) return false;
     for (var ci = 0; ci < L.classIds.length; ci++) if (arr(loadC, L.classIds[ci])[d1] >= settings.classMaxPerDay) return false;
     return true;
   }
@@ -542,9 +545,9 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
   function feasible(L, s){
     var d = dayOf(s), h = s % NH;
     if (slotBlocked(settings, s)) return false;
-    if (unavail[L.teacherId] && unavail[L.teacherId][s]) return false;
-    if (busyT[L.teacherId] && busyT[L.teacherId][s]) return false;
-    if (arr(loadT, L.teacherId)[d] >= settings.teacherMaxPerDay) return false;
+    if (L.teacherId && unavail[L.teacherId] && unavail[L.teacherId][s]) return false;
+    if (L.teacherId && busyT[L.teacherId] && busyT[L.teacherId][s]) return false;
+    if (L.teacherId && arr(loadT, L.teacherId)[d] >= settings.teacherMaxPerDay) return false;
     var lk = kindL(L);
     for (var ci = 0; ci < L.classIds.length; ci++){
       var cid = L.classIds[ci];
@@ -568,7 +571,7 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
     (atSlot[s2] || []).forEach(function(x){
       if (x.id === U.id) return;
       if (U.link && x.link === U.link) return;
-      if (x.teacherId === U.teacherId){ out.push(x); return; }
+      if (U.teacherId && x.teacherId === U.teacherId){ out.push(x); return; }
       for (var i = 0; i < U.classIds.length; i++){
         if (x.classIds.indexOf(U.classIds[i]) >= 0 && classClash(lk, kindL(x), U.group, x.group)){ out.push(x); return; }
       }
@@ -577,32 +580,73 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
   }
   var tTotals = {};
   ls.forEach(function(l){ tTotals[l.teacherId] = (tTotals[l.teacherId] || 0) + 1; });
-  var order = ls.slice().sort(function(a, b){ return (tTotals[b.teacherId] - tTotals[a.teacherId]) || (rng() - 0.5); });
+  var units = [], unitOf = {};
+  var linkA = {};
+  ls.forEach(function(l){
+    if (l.link){ (linkA[l.link] = linkA[l.link] || []).push(l); }
+    else units.push([l]);
+  });
+  for (var lk in linkA){
+    var byAct = {};
+    linkA[lk].forEach(function(l){ (byAct[l.activityId] = byAct[l.activityId] || []).push(l); });
+    var kys = Object.keys(byAct);
+    var maxN = 0;
+    kys.forEach(function(k){ maxN = Math.max(maxN, byAct[k].length); });
+    for (var ix = 0; ix < maxN; ix++){
+      var un = [];
+      kys.forEach(function(k){ if (byAct[k][ix]) un.push(byAct[k][ix]); });
+      units.push(un);
+    }
+  }
+  units.forEach(function(un){ un.forEach(function(l){ unitOf[l.id] = un; }); });
+  function unitW(u){ var w = 0; u.forEach(function(l){ w += (tTotals[l.teacherId] || 0); }); return w; }
+  function unitOK(u, s){
+    for (var m = 0; m < u.length; m++){
+      for (var n = m + 1; n < u.length; n++) if (u[m].teacherId && u[m].teacherId === u[n].teacherId) return false;
+    }
+    for (var m2 = 0; m2 < u.length; m2++) if (!feasible(u[m2], s)) return false;
+    return true;
+  }
+  var order = units.slice().sort(function(a, b){ return (unitW(b) - unitW(a)) || (rng() - 0.5); });
   for (var oi = 0; oi < order.length; oi++){
-    var L = order[oi];
+    var u = order[oi];
+    var L = u[0];
     var bestS = -1, bestScore = -Infinity;
-    var excL = isGapExc(tNameM[L.teacherId], settings);
+    var excL = L.teacherId ? isGapExc(tNameM[L.teacherId], settings) : false;
     for (var d = 0; d < 5; d++) for (var h = 0; h < NH; h++){
       var s = d * NH + h;
-      if (!feasible(L, s)) continue;
+      if (!unitOK(u, s)) continue;
       var sameSubj = subjDay[L.classIds[0] + "|" + d + "|" + L.subject] || 0;
       var dh = daySlots(L.teacherId)[d];
       var dg = dayGaps(dh.concat([h])) - dayGaps(dh);
-      var score = -(2.0 * arr(loadC, L.classIds[0])[d]) - (1.5 * arr(loadT, L.teacherId)[d]) - 4.0 * sameSubj - 0.5 * h - (excL ? 0 : 6.0 * dg) + rng() * 0.9;
+      var score = -(2.0 * arr(loadC, L.classIds[0])[d]) - (1.5 * (L.teacherId ? arr(loadT, L.teacherId)[d] : 0)) - 4.0 * sameSubj - 0.5 * h - (excL ? 0 : 6.0 * dg) - (kindL(L) === "swietl" && h >= 2 && h <= 4 ? 25 : 0) + rng() * 0.9;
       if (score > bestScore){ bestScore = score; bestS = s; }
     }
-    if (bestS >= 0) place(L, bestS); else unplaced.push(L.id);
+    if (bestS >= 0){ for (var pi = 0; pi < u.length; pi++) place(u[pi], bestS); }
+    else { for (var qi = 0; qi < u.length; qi++) unplaced.push(u[qi].id); }
   }
   for (var round = 0; round < 4; round++){
     var progress = false;
     var un2 = unplaced.slice();
     for (var ui = 0; ui < un2.length; ui++){
       var uid = un2[ui], U = byId[uid]; if (!U) continue;
+      if (U.link){
+        var grp = unitOf[uid] || [U];
+        if (grp.some(function(x){ return placement[x.id] != null; })) continue;
+        for (var sg = 0; sg < 5 * NH; sg++){
+          if (slotBlocked(settings, sg)) continue;
+          if (!unitOK(grp, sg)) continue;
+          if (grp.some(function(x){ return conflictsAt(x, sg).length > 0; })) continue;
+          for (var gi = 0; gi < grp.length; gi++){ place(grp[gi], sg); var gix = unplaced.indexOf(grp[gi].id); if (gix >= 0) unplaced.splice(gix, 1); }
+          progress = true; break;
+        }
+        continue;
+      }
       for (var s2 = 0; s2 < 5 * NH; s2++){
         var dd = dayOf(s2);
         if (slotBlocked(settings, s2)) continue;
-        if (unavail[U.teacherId] && unavail[U.teacherId][s2]) continue;
-        if (arr(loadT, U.teacherId)[dd] >= settings.teacherMaxPerDay) continue;
+        if (U.teacherId && unavail[U.teacherId] && unavail[U.teacherId][s2]) continue;
+        if (U.teacherId && arr(loadT, U.teacherId)[dd] >= settings.teacherMaxPerDay) continue;
         var blockers = conflictsAt(U, s2);
         if (blockers.length === 0){
           if (!feasible(U, s2)) continue;
@@ -610,6 +654,7 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
         }
         if (blockers.length > 1) continue;
         var B = blockers[0];
+        if (B.link) continue;
         unplace(B);
         if (!feasible(U, s2)){ place(B, s2); continue; }
         place(U, s2);
@@ -657,16 +702,26 @@ function findViolations(ls, teachers, classes, placement, settings){
     var d = Math.floor(s / NH), h = s % NH;
     if (tM[L.teacherId] && tM[L.teacherId].unavail.indexOf(s) >= 0) errs.push(tNm(L.teacherId) + " nie jest dostępny/na: " + DAYS[d] + ", lekcja " + (h + 1));
     if (slotBlocked(settings, s)) errs.push("Zablokowana godzina: " + tNm(L.teacherId) + " (" + cNm(L.classIds[0]) + ") — " + DAYS[d] + ", lekcja " + (h + 1) + " jest wyłączona w Zasadach planu");
-    var kT = L.teacherId + "|" + s;
-    if (slotT[kT]) errs.push(tNm(L.teacherId) + " ma dwie lekcje naraz (" + DAYS[d] + ", godz. " + (h + 1) + ")");
-    else slotT[kT] = L;
+    if (L.teacherId){
+      var kT = L.teacherId + "|" + s;
+      if (slotT[kT]) errs.push(tNm(L.teacherId) + " ma dwie lekcje naraz (" + DAYS[d] + ", godz. " + (h + 1) + ")");
+      else slotT[kT] = L;
+    }
     L.classIds.forEach(function(cid){
       var m = byClsSlot[cid] = byClsSlot[cid] || {};
       var fresh = !m[s] || m[s].length === 0;
       (m[s] = m[s] || []).push(L);
       if (fresh) arr(loadC, cid)[d]++;
     });
-    arr(loadT, L.teacherId)[d]++;
+    if (L.teacherId) arr(loadT, L.teacherId)[d]++;
+  }
+  var linkSlot = {};
+  for (var li2 = 0; li2 < ls.length; li2++){
+    var L2 = ls[li2], s2b = placement[L2.id];
+    if (s2b == null || !L2.link) continue;
+    var kk2 = L2.link + "|" + (L2.id.split("-")[1] || "0");
+    if (linkSlot[kk2] == null) linkSlot[kk2] = s2b;
+    else if (linkSlot[kk2] !== s2b) errs.push("Powiązanie „" + L2.link + "”: zajęcia powiązane muszą być na tej samej godzinie (" + cNm(L2.classIds[0]) + " — " + DAYS[Math.floor(s2b / NH)] + ", lekcja " + (s2b % NH + 1) + ")");
   }
   for (var cid in byClsSlot) for (var sKey in byClsSlot[cid]){
     var atS = byClsSlot[cid][sKey]; var sn = +sKey;
@@ -701,7 +756,7 @@ function samePerson(a, b){
 }
 function parseImportText(text){
   var rows = [];
-  var lines = text.split(/\r?\n/).map(function(l){ return l.trim(); }).filter(Boolean);
+  var lines = text.split(/\r?\n/).map(function(l){ return l.replace(/^[ ]+|[ ]+$/g, ""); }).filter(function(l){ return l.replace(/\t/g, " ").trim() !== ""; });
   function clean(x){ return x.trim().replace(/^["'„»]+/, "").replace(/["'«»]+$/, ""); }
   var lastTeacher = null;
   var colMap = null, skipSheet = false, sheetCount = 0;
@@ -748,7 +803,7 @@ function parseImportText(text){
       }
       continue;
     }
-    var line = raw.replace(/^\s*(\d{1,3}[.)]\s+|[-•*·–—]\s*)/, "").trim();
+    var line = raw.replace(/^\s*(\d{1,3}[.)]\s+|[-•*·–—]\s*)/, "").replace(/^[ ]+|[ ]+$/g, "");
     var parts = line.indexOf("\t") >= 0 ? line.split("\t") : line.indexOf(";") >= 0 ? line.split(";") : line.indexOf(",") >= 0 ? line.split(",") : null;
     if (!parts){
       var h1 = isTeacherHeading(line);
@@ -764,7 +819,7 @@ function parseImportText(text){
       rows.push({ teacher: fields[0].slice(0, 40), subject: "", className: "", hours: 0, status: "err", note: "za mało kolumn w wierszu" });
       continue;
     }
-    var teacher = "", short = null, subject = "", className = "", hours = 1, noteParts = [];
+    var teacher = "", short = null, subject = "", className = "", hours = 1, zeroH = false, noteParts = [];
     var usedMap = false;
     if (parts && colMap && parts.length > colMap.subjectIdx && parts.length > colMap.teacherIdx && (colMap.classIdx == null || parts.length > colMap.classIdx)){
       var fC = parts.map(clean);
@@ -773,8 +828,8 @@ function parseImportText(text){
       className = colMap.classIdx != null ? (fC[colMap.classIdx] || "").trim() : "";
       if (colMap.hoursIdx != null){
         var hv2 = parseInt((fC[colMap.hoursIdx] || "").replace(",", "."), 10);
-        hours = isNaN(hv2) ? 1 : Math.max(1, hv2);
-        if (isNaN(hv2)) noteParts.push("brak godzin — przyjęto 1");
+        if (hv2 === 0) zeroH = true;
+        else { hours = isNaN(hv2) ? 1 : Math.max(1, hv2); if (isNaN(hv2)) noteParts.push("brak godzin — przyjęto 1"); }
       }
       if (/^[-–—.,\s]*$/.test(teacher)) teacher = "";
       if (/^[-–—.,\s]*$/.test(subject)) subject = "";
@@ -784,7 +839,8 @@ function parseImportText(text){
     if (!usedMap){
       var hoursIdx = -1;
       for (var ii = fields.length - 1; ii >= 0; ii--) if (/^\d{1,2}\s*(h|godz\.?|g)?$/i.test(fields[ii])){ hoursIdx = ii; break; }
-      hours = hoursIdx >= 0 ? Math.max(1, parseInt(fields[hoursIdx], 10)) : 1;
+      var hv0 = hoursIdx >= 0 ? parseInt(fields[hoursIdx], 10) : 1;
+      if (hv0 === 0){ zeroH = true; hours = 1; } else { hours = Math.max(1, hv0); }
       if (hoursIdx < 0) noteParts.push("brak godzin — przyjęto 1");
       var rest = fields.filter(function(_, idx){ return idx !== hoursIdx; });
       var classIdx = -1;
@@ -842,16 +898,20 @@ function parseImportText(text){
       var an = tById()[a.teacherId], cn = cById()[a.classId];
       return an && samePerson(an.name, teacher) && cn && cn.name.toLowerCase() === className.toLowerCase() && a.subject.toLowerCase() === subject.toLowerCase() && a.hours === hours;
     });
-    if (!teacher || !subject || !className){
+    if (!subject || !className){
       status = "err";
-      if (!teacher) noteParts.push("brak nauczyciela");
       if (!subject) noteParts.push("brak przedmiotu");
+      if (!className) noteParts.push("brak klasy");
+    } else if (!teacher){
+      status = "warn";
+      noteParts.push("bez nauczyciela (wakat) — zajęcia do obsadzenia");
     } else if (dup){
       status = "err"; noteParts.push("duplikat — już jest w danych");
     } else {
       if (!teacherExists){ status = "warn"; noteParts.push("nowy nauczyciel — zostanie dodany"); }
       if (!classExists){ status = "warn"; noteParts.push("nowa klasa — zostanie dodana"); }
     }
+    if (zeroH){ status = "err"; noteParts.push("0 godzin — przydział usunięty/odjęty, pomijam"); }
     if (hours > 30){ status = "err"; noteParts.push("podejrzanie dużo godzin (" + hours + ") — wygląda na wiersz podsumowania/pensum"); }
     if (teacher && /\d/.test(teacher)){ status = "err"; noteParts.push("nazwisko nauczyciela zawiera cyfry — śmieciowy wiersz"); }
     if (teacher && !/^WAKAT/i.test(teacher) && !/^[A-ZĄĆĘŁŃÓŚŹŻ]/.test(teacher)){ status = "err"; noteParts.push("nazwa nauczyciela nie wygląda na nazwisko"); }
@@ -1157,19 +1217,19 @@ function renderDane(){
        + '<option value=""' + (!a.withClassId ? " selected" : "") + '>— sama klasa —</option>'
        + S.classes.filter(function(c){ return c.id !== a.classId; }).map(function(c){ return '<option value="' + c.id + '"' + (a.withClassId === c.id ? " selected" : "") + ">" + esc(c.name) + "</option>"; }).join("")
        + "</select>"
-       + '<select class="inp" onchange="setAct(\'' + a.id + '\',\'teacherId\',this.value)">' + opts(S.teachers, a.teacherId) + "</select>"
+       + '<select class="inp" title="Nauczyciel" onchange="setAct(\'' + a.id + '\',\'teacherId\',this.value)"><option value=""' + (!a.teacherId ? " selected" : "") + '>— bez naucz. —</option>' + opts(S.teachers, a.teacherId) + "</select>"
        + '<input class="inp" placeholder="przedmiot" value="' + esc(a.subject) + '" onchange="setAct(\'' + a.id + '\',\'subject\',this.value)">'
-       + '<select class="inp" style="max-width:150px" title="Rodzaj zajęć" onchange="setAct(\'' + a.id + '\',\'kind\',this.value)">'
        + '<select class="inp" style="max-width:150px" title="Rodzaj zajęć" onchange="setAct(\'' + a.id + '\',\'kind\',this.value)">'
        + '<option value="dyd"' + (kindOf(a) === "dyd" ? " selected" : "") + '>Dydaktyczne</option>'
        + '<option value="rew"' + (kindOf(a) === "rew" ? " selected" : "") + '>Rewalidacja</option>'
        + '<option value="swietl"' + (kindOf(a) === "swietl" ? " selected" : "") + '>Świetlica</option>'
        + "</select>"
        + '<input class="inp" style="width:70px" placeholder="grupa" title="Grupa (np. a, b, chł., dz.) — zajęcia tej samej klasy z różnymi grupami mogą być równolegle" value="' + esc(a.group || "") + '" onchange="setAct(\'' + a.id + '\',\'group\',this.value)">'
+       + '<input class="inp" style="width:86px" placeholder="↔ powiązanie" title="Powiązanie: zajęcia z tą samą etykietą (np. REL) zawsze są na tej samej godzinie i mogą nakładać się w klasie (np. religia + świetlica równolegle)" value="' + esc(a.link || "") + '" onchange="setAct(\'' + a.id + '\',\'link\',this.value)">'
        + '<input class="inp" type="number" min="1" max="20" style="text-align:center" value="' + a.hours + '" onchange="setAct(\'' + a.id + '\',\'hours\',this.value)">'
        + '<button class="del" onclick="delAct(\'' + a.id + '\')">✕</button></div>';
   });
-  h += '<button class="btn2" onclick="addAct()">+ Dodaj zajęcia</button> <span class="hint">Godziny = liczba lekcji tygodniowo. Zajęcia łączone (druga klasa) chodzą jednocześnie w obu oddziałach.</span></div></div>';
+  h += '<button class="btn2" onclick="addAct()">+ Dodaj zajęcia</button> <span class="hint">Godziny = liczba lekcji tygodniowo. Zajęcia łączone (druga klasa) chodzą jednocześnie w obu oddziałach. Powiązania ↔: ta sama etykieta = zawsze ta sama godzina (np. religia + świetlica równolegle).</span></div></div>';
   h += '<div class="card"><div class="hd">📥 Import przydziałów nauczycieli — wklej z Worda/Excela, bez klepania</div><div class="bd">';
   h += '<p class="hint">Rozpoznaję kolumny <b>Nauczyciel · Przedmiot · Klasa · Godziny</b> w dowolnej kolejności (godziny i klasę wykrywam sam). Rozpoznaję szkolne nazwy oddziałów (np. 5aM, 7z, „1a aut."). Scalone komórki Worda działają. Pliki <b>.docx</b> (Word) i <b>.xlsx</b> (Excel) wczytuję bezpośrednio — czytam tabele i arkusze; stary .doc wklej przez <b>Ctrl+V</b> albo zapisz jako .txt/.docx. Skrót nauczyciela możesz podać w nawiasie: Kowalska Anna (Kow).</p>';
   h += '<div class="row"><input type="file" class="file" id="importFile" accept=".txt,.csv,.tsv,.docx,.xlsx" onchange="importFileRead(this)"><button class="btn" onclick="analyze()">🔍 Analizuj</button></div>';
@@ -1239,6 +1299,7 @@ function setAct(id, key, val){
   if (key === "hours") a.hours = Math.max(1, Math.min(20, parseInt(val) || 1));
   else if (key === "kind") a.kind = (val === "rew" || val === "swietl") ? val : "dyd";
   else if (key === "group") a.group = (val || "").trim();
+  else if (key === "link") a.link = (val || "").trim();
   else if (key === "withClassId") a.withClassId = (val && val !== a.classId) ? val : "";
   else a[key] = val;
   prunePlacement(); save(); render();
@@ -1260,15 +1321,18 @@ function analyze(){
 function cancelImport(){ importRows = null; render(); }
 function doImport(){
   if (!importRows) return;
-  var rows = importRows.filter(function(r){ return r.status !== "err" && r.teacher && r.className; });
+  var rows = importRows.filter(function(r){ return r.status !== "err" && r.className; });
   if (!rows.length){ flash("Brak wierszy do zaimportowania.", "err"); return; }
   var hoursSum = rows.reduce(function(acc, r){ return acc + (r.hours || 1); }, 0);
   if (hoursSum > 1200){ flash("⛔ Suma godzin do zaimportowania = " + hoursSum + ". To wygląda na zły plik lub tabele podsumowujące (realnie szkoła ma ok. 700). Import przerwany.", "err"); return; }
-  var addedT = 0, addedC = 0, mergedN = 0;
+  var addedT = 0, addedC = 0, mergedN = 0, wakatN = 0;
   rows.forEach(function(r){
+    if (!r.teacher) wakatN++;
     var t = null;
-    S.teachers.forEach(function(x){ if (!t && samePerson(x.name, r.teacher)) t = x; });
-    if (!t){ t = { id: nextId(S.teachers, "t"), name: r.teacher, short: r.short || r.teacher.split(/\s+/).slice(-1)[0].slice(0, 3), unavail: [] }; S.teachers.push(t); addedT++; }
+    if (r.teacher){
+      S.teachers.forEach(function(x){ if (!t && samePerson(x.name, r.teacher)) t = x; });
+      if (!t){ t = { id: nextId(S.teachers, "t"), name: r.teacher, short: r.short || r.teacher.split(/\s+/).slice(-1)[0].slice(0, 3), unavail: [] }; S.teachers.push(t); addedT++; }
+    }
     var names = (r.classNames && r.classNames.length ? r.classNames : [r.className]);
     var clsIds = [];
     names.forEach(function(nm){
@@ -1278,10 +1342,10 @@ function doImport(){
       clsIds.push(c.id);
     });
     if (clsIds.length > 1) mergedN++;
-    S.activities.push({ id: nextId(S.activities, "a"), classId: clsIds[0], withClassId: clsIds[1] || "", teacherId: t.id, subject: r.subject, hours: r.hours, kind: r.kind || guessKind(r.subject), group: "" });
+    S.activities.push({ id: nextId(S.activities, "a"), classId: clsIds[0], withClassId: clsIds[1] || "", teacherId: t ? t.id : "", subject: r.subject, hours: r.hours, kind: r.kind || guessKind(r.subject), group: "", link: "" });
   });
   importRows = null; importText = ""; save(); render();
-  flash("✅ Zaimportowano " + rows.length + " przydziałów (+" + addedT + " nauczycieli, +" + addedC + " klas" + (mergedN ? ", " + mergedN + " zajęć łączonych" : "") + "). Wygeneruj plan albo dokładaj ręcznie.", "ok");
+  flash("✅ Zaimportowano " + rows.length + " przydziałów (+" + addedT + " nauczycieli, +" + addedC + " klas" + (mergedN ? ", " + mergedN + " zajęć łączonych" : "") + (wakatN ? ", " + wakatN + " bez nauczyciela (wakat)" : "") + "). Wygeneruj plan albo dokładaj ręcznie.", "ok");
 }
 
 /* ---------- zakładka OGRANICZENIA ---------- */
@@ -1450,10 +1514,12 @@ function cellClick(s){
   if (!SL){ sel = null; render(); return; }
   var placed = placement[sel] != null;
   var np = Object.assign({}, placement); np[sel] = s;
+  if (SL.link) ls.forEach(function(l){ if (l.link === SL.link && l.id !== sel && l.id.split("-")[1] === sel.split("-")[1]) np[l.id] = s; });
   if (!findViolations(ls, S.teachers, S.classes, np, S.settings).length){ applyPlacement(np, "✅ Przeniesiono."); return; }
   if (here && placed){
     var np2 = Object.assign({}, placement);
     var a = np2[sel], b = np2[here.id]; np2[sel] = b; np2[here.id] = a;
+    if (SL.link) ls.forEach(function(l){ if (l.link === SL.link && l.id !== sel && l.id.split("-")[1] === sel.split("-")[1]) np2[l.id] = np2[sel]; });
     applyPlacement(np2, "✅ Zamieniono lekcje."); return;
   }
   if (here){
@@ -1464,10 +1530,12 @@ function cellClick(s){
 }
 function unassign(id, ev){
   if (ev) ev.preventDefault();
-  delete S.placement[id];
+  var L0 = null; lessons().forEach(function(l){ if (l.id === id) L0 = l; });
+  if (L0 && L0.link){ var ixU = (id.split("-")[1] || "0"); lessons().forEach(function(l){ if (l.link === L0.link && (l.id.split("-")[1] || "0") === ixU) delete S.placement[l.id]; }); }
+  else delete S.placement[id];
   if (sel === id) sel = null;
   save(); render();
-  flash("Lekcja wróciła do nieprzypisanych.", "ok");
+  flash(L0 && L0.link ? "Powiązane lekcje wróciły do nieprzypisanych." : "Lekcja wróciła do nieprzypisanych.", "ok");
 }
 function renderPlan(){
   var ls = lessons(), placement = S.placement;
@@ -1520,7 +1588,7 @@ function renderPlan(){
       var bl = S.settings.blockedSlots.indexOf(s2) >= 0;
       h += '<td onclick="cellClick(' + s2 + ')"' + (bl ? ' style="background:repeating-linear-gradient(45deg,transparent,transparent 5px,rgba(148,163,184,.18) 5px,rgba(148,163,184,.18) 10px)"' : '') + '>';
       relC.forEach(function(L){
-        h += '<div class="chip c' + colorIdx(L.subject) + (sel === L.id ? " sel" : "") + '" onclick="event.stopPropagation();chipClick(\'' + L.id + '\')" oncontextmenu="unassign(\'' + L.id + '\',event)" title="' + esc(L.subject) + " — prawy klik usuwa z planu\">"
+        h += '<div class="chip c' + colorIdx(L.subject) + (sel === L.id ? " sel" : "") + '" onclick="event.stopPropagation();chipClick(\'' + L.id + '\')" oncontextmenu="unassign(\'' + L.id + '\',event)" title="' + esc(L.subject) + (L.link ? " (↔ " + L.link + ")" : "") + " — prawy klik usuwa z planu\">"
            + '<span class="subj">' + esc(L.subject) + "</span>"
            + '<span class="sub">' + esc(viewMode === "class" ? tShort(L.teacherId) : L.classIds.map(cName).join("+")) + "</span></div>";
       });
@@ -1529,7 +1597,7 @@ function renderPlan(){
     h += "</tr>";
   }
   h += "</table></div>";
-  h += '<p class="hint">Klik lekcja → wolne pole = przeniesienie • lekcja → lekcja = zamiana • prawy klik = usuń z planu. Program pilnuje dostępności nauczycieli, podwójnych lekcji i limitów dziennych, a także zasad z wytycznych: zablokowane godziny (siatka w Zasadach planu), okienka, bloki AUT i pary przedmiotów.</p>';
+  h += '<p class="hint">Klik lekcja → wolne pole = przeniesienie • lekcja → lekcja = zamiana • prawy klik = usuń z planu. Program pilnuje dostępności nauczycieli, podwójnych lekcji i limitów dziennych, a także zasad z wytycznych: zablokowane godziny (siatka w Zasadach planu), okienka, bloki AUT, powiązania tej samej godziny i pary przedmiotów.</p>';
   return h;
 }
 
