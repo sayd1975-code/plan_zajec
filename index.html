@@ -160,7 +160,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.4.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.5.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -267,8 +267,8 @@ function hoursBy(key){ var m = {}; S.activities.forEach(function(a){ m[a[key]] =
 
 /* ==================== dane startowe ==================== */
 function sps7State(){
-  var names = ["1a","1a b","2a AUT","2b AUT (m)","3a AUT","3b AUT","3c AUT","4a AUT","5 ZET","5a M","6 AUT","6a M","6b","7 AUT","7a","8 ZET"];
-  var rew =   [2,     2,      2,       2,          2,      2,      1,       2,       1,       3,      2,      3,      3,    1,      3,    1];
+  var names = ["1a","2a AUT","2b AUT (m)","3a AUT","3b AUT","3c AUT","4a AUT","5 ZET","5a M","6 AUT","6a M","6b","7 AUT","7a","8 ZET"];
+  var rew =   [2,     2,       2,          2,      2,      1,       2,       1,       3,      2,      3,      3,    1,      3,    1];
   return {
     teachers: [],
     classes: names.map(function(n, i){ return { id: "c" + (i + 1), name: n, rew: rew[i] }; }),
@@ -819,7 +819,7 @@ function parseImportText(text){
       rows.push({ teacher: fields[0].slice(0, 40), subject: "", className: "", hours: 0, status: "err", note: "za mało kolumn w wierszu" });
       continue;
     }
-    var teacher = "", short = null, subject = "", className = "", hours = 1, zeroH = false, noteParts = [];
+    var teacher = "", short = null, subject = "", className = "", grp = "", hours = 1, zeroH = false, noteParts = [];
     var usedMap = false;
     if (parts && colMap && parts.length > colMap.subjectIdx && parts.length > colMap.teacherIdx && (colMap.classIdx == null || parts.length > colMap.classIdx)){
       var fC = parts.map(clean);
@@ -833,7 +833,12 @@ function parseImportText(text){
       }
       if (/^[-–—.,\s]*$/.test(teacher)) teacher = "";
       if (/^[-–—.,\s]*$/.test(subject)) subject = "";
-      if (colMap.noteIdx != null && parts.length > colMap.noteIdx && (fC[colMap.noteIdx] || "").trim()) noteParts.push("uwagi: " + (fC[colMap.noteIdx] || "").trim().slice(0, 70));
+      if (colMap.noteIdx != null && parts.length > colMap.noteIdx && (fC[colMap.noteIdx] || "").trim()){
+        var noteRaw = (fC[colMap.noteIdx] || "").trim();
+        noteParts.push("uwagi: " + noteRaw.slice(0, 70));
+        var gm = /\bgr(?:upa)?\.?\s*(\d{1,2})\s*\/\s*\d{1,2}/i.exec(noteRaw);
+        if (gm){ grp = gm[1]; noteParts.push("grupa: " + grp); }
+      }
       usedMap = true;
     }
     if (!usedMap){
@@ -887,6 +892,16 @@ function parseImportText(text){
       var canon = null;
       S.classes.forEach(function(c){ if (c.name.toLowerCase() === className.toLowerCase()) canon = c.name; });
       if (!canon) S.classes.forEach(function(c){ if (normName(c.name) === normName(className)) canon = c.name; });
+      if (!canon){
+        var gs = /^(.+?)\s+([a-ząćęłńóśźż]{1,2})$/.exec(className.replace(/^klasa\s+/i, "").trim());
+        if (gs){
+          var base = gs[1], gTok = gs[2].toLowerCase();
+          var canonB = null;
+          S.classes.forEach(function(c){ if (c.name.toLowerCase() === base.toLowerCase()) canonB = c.name; });
+          if (!canonB) S.classes.forEach(function(c){ if (normName(c.name) === normName(base)) canonB = c.name; });
+          if (canonB){ canon = canonB; if (!grp){ grp = gTok; noteParts.push("grupa: " + gTok); } }
+        }
+      }
       if (canon) className = canon;
     }
     var status = "ok";
@@ -917,7 +932,7 @@ function parseImportText(text){
     if (teacher && !/^WAKAT/i.test(teacher) && !/^[A-ZĄĆĘŁŃÓŚŹŻ]/.test(teacher)){ status = "err"; noteParts.push("nazwa nauczyciela nie wygląda na nazwisko"); }
     if (teacher) lastTeacher = teacher;
     if (status3plus && status === "ok") status = "warn";
-    rows.push({ teacher: teacher, short: short, subject: subject, className: className, classNames: classNames, hours: hours, kind: guessKind(subject), status: status, note: noteParts.join("; ") || null });
+    rows.push({ teacher: teacher, short: short, subject: subject, className: className, classNames: classNames, group: grp, hours: hours, kind: guessKind(subject), status: status, note: noteParts.join("; ") || null });
   }
   return rows;
 }
@@ -1231,16 +1246,16 @@ function renderDane(){
   });
   h += '<button class="btn2" onclick="addAct()">+ Dodaj zajęcia</button> <span class="hint">Godziny = liczba lekcji tygodniowo. Zajęcia łączone (druga klasa) chodzą jednocześnie w obu oddziałach. Powiązania ↔: ta sama etykieta = zawsze ta sama godzina (np. religia + świetlica równolegle).</span></div></div>';
   h += '<div class="card"><div class="hd">📥 Import przydziałów nauczycieli — wklej z Worda/Excela, bez klepania</div><div class="bd">';
-  h += '<p class="hint">Rozpoznaję kolumny <b>Nauczyciel · Przedmiot · Klasa · Godziny</b> w dowolnej kolejności (godziny i klasę wykrywam sam). Rozpoznaję szkolne nazwy oddziałów (np. 5aM, 7z, „1a aut."). Scalone komórki Worda działają. Pliki <b>.docx</b> (Word) i <b>.xlsx</b> (Excel) wczytuję bezpośrednio — czytam tabele i arkusze; stary .doc wklej przez <b>Ctrl+V</b> albo zapisz jako .txt/.docx. Skrót nauczyciela możesz podać w nawiasie: Kowalska Anna (Kow).</p>';
+  h += '<p class="hint">Rozpoznaję kolumny <b>Nauczyciel · Przedmiot · Klasa · Godziny</b> w dowolnej kolejności (godziny i klasę wykrywam sam). Rozpoznaję szkolne nazwy oddziałów (np. 5aM, 7z, „1a aut."). Scalone komórki Worda działają. Pliki <b>.docx</b> (Word) i <b>.xlsx</b> (Excel) wczytuję bezpośrednio — czytam tabele i arkusze; stary .doc wklej przez <b>Ctrl+V</b> albo zapisz jako .txt/.docx. Skrót nauczyciela możesz podać w nawiasie: Kowalska Anna (Kow). Grupy czytam sam: z kolumny uwag („Grupa 1/2") i z nazwy oddziału („1 a b" → klasa 1a, grupa b).</p>';
   h += '<div class="row"><input type="file" class="file" id="importFile" accept=".txt,.csv,.tsv,.docx,.xlsx" onchange="importFileRead(this)"><button class="btn" onclick="analyze()">🔍 Analizuj</button></div>';
   h += '<textarea id="importText" class="inp ta" rows="6" placeholder="np. wklejone z Worda (tabulatory):&#10;Kowalska Anna\tEdukacja wczesnoszkolna\t1a\t15&#10;\tRewalidacja\t1a\t2&#10;Lis Barbara\tJ. polski\t3a\t5">' + esc(importText) + "</textarea>";
   if (importRows){
     var okN = importRows.filter(function(r){ return r.status !== "err"; }).length;
     var erN = importRows.length - okN;
     h += '<div style="margin-top:10px"><b>Podgląd: ' + okN + " do zaimportowania, " + erN + " odrzuconych</b>";
-    h += '<div class="prevtbl"><table><tr><th>Nauczyciel</th><th>Przedmiot</th><th>Klasa</th><th>Godz.</th><th>Rodzaj</th><th>Status</th></tr>';
+    h += '<div class="prevtbl"><table><tr><th>Nauczyciel</th><th>Przedmiot</th><th>Klasa</th><th>Godz.</th><th>Grupa</th><th>Rodzaj</th><th>Status</th></tr>';
     importRows.forEach(function(r){
-      h += '<tr class="' + (r.status === "err" ? "rer" : r.status === "warn" ? "rwr" : "") + '"><td>' + esc(r.teacher || "—") + "</td><td>" + esc(r.subject || "—") + "</td><td>" + esc(r.className || "—") + '</td><td style="text-align:right">' + (r.hours || "—") + "</td><td>" + (r.kind === "rew" ? "Rewalidacja" : r.kind === "swietl" ? "Świetlica" : "Dydaktyczne") + "</td><td>" + (r.status === "ok" ? "✓" : esc(r.note || "błąd")) + "</td></tr>";
+      h += '<tr class="' + (r.status === "err" ? "rer" : r.status === "warn" ? "rwr" : "") + '"><td>' + esc(r.teacher || "—") + "</td><td>" + esc(r.subject || "—") + "</td><td>" + esc(r.className || "—") + '</td><td style="text-align:right">' + (r.hours || "—") + "</td><td>" + (r.group ? esc(r.group) : "—") + "</td><td>" + (r.kind === "rew" ? "Rewalidacja" : r.kind === "swietl" ? "Świetlica" : "Dydaktyczne") + "</td><td>" + (r.status === "ok" ? "✓" : esc(r.note || "błąd")) + "</td></tr>";
     });
     h += "</table></div>";
     h += '<div class="row" style="margin-top:8px"><button class="btn" onclick="doImport()">✅ Importuj ' + okN + ' wierszy</button><button class="btn2" onclick="cancelImport()">Anuluj</button></div></div>';
@@ -1342,7 +1357,7 @@ function doImport(){
       clsIds.push(c.id);
     });
     if (clsIds.length > 1) mergedN++;
-    S.activities.push({ id: nextId(S.activities, "a"), classId: clsIds[0], withClassId: clsIds[1] || "", teacherId: t ? t.id : "", subject: r.subject, hours: r.hours, kind: r.kind || guessKind(r.subject), group: "", link: "" });
+    S.activities.push({ id: nextId(S.activities, "a"), classId: clsIds[0], withClassId: clsIds[1] || "", teacherId: t ? t.id : "", subject: r.subject, hours: r.hours, kind: r.kind || guessKind(r.subject), group: r.group || "", link: "" });
   });
   importRows = null; importText = ""; save(); render();
   flash("✅ Zaimportowano " + rows.length + " przydziałów (+" + addedT + " nauczycieli, +" + addedC + " klas" + (mergedN ? ", " + mergedN + " zajęć łączonych" : "") + (wakatN ? ", " + wakatN + " bez nauczyciela (wakat)" : "") + "). Wygeneruj plan albo dokładaj ręcznie.", "ok");

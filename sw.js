@@ -1,4 +1,4 @@
-const CACHE_NAME = "plan-zajec-v6.4";
+const CACHE_NAME = "plan-zajec-v6.5";
 const ASSETS = ["./", "./index.html", "./manifest.json", "./icon.svg"];
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
