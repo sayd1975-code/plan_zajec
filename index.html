@@ -169,7 +169,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.21.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.22.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -1662,6 +1662,34 @@ function opts(list, val, label){
   list.forEach(function(x){ h += '<option value="' + x.id + '"' + (x.id === val ? " selected" : "") + ">" + esc(x.name) + "</option>"; });
   return h;
 }
+
+/* v6.22: sortowanie list w rozwijanych wyborach */
+function tchKeyOf(t){
+  var w = String((t && t.name) || "").trim().split(/\s+/);
+  return (w.length > 1 ? w[w.length - 1] : (w[0] || "")) + "\u0001" + (w.length > 1 ? w[0] : "");
+}
+function sortedTeachers(){
+  return S.teachers.slice().sort(function(a, b){
+    var r = tchKeyOf(a).localeCompare(tchKeyOf(b), "pl");
+    return r || String(a.name).localeCompare(String(b.name), "pl");
+  });
+}
+function sortedClasses(){
+  return S.classes.slice().sort(function(a, b){
+    var ia = A1_SCHOOL_ORDER.indexOf(schoolClassCode(a.name));
+    var ib = A1_SCHOOL_ORDER.indexOf(schoolClassCode(b.name));
+    if (ia < 0 && ib < 0) return String(a.name).localeCompare(String(b.name), "pl");
+    if (ia < 0) return 1;
+    if (ib < 0) return -1;
+    return (ia - ib) || String(a.name).localeCompare(String(b.name), "pl");
+  });
+}
+function sortedSubjects(){
+  var seen = {}, arr = [];
+  S.activities.forEach(function(a){ var k = normName(a.subject); if (!seen[k]){ seen[k] = 1; arr.push(a.subject); } });
+  arr.sort(function(x, y){ return String(x).localeCompare(String(y), "pl"); });
+  return arr;
+}
 function renderTabs(){
   var tabs = [["dane","📋 Dane"],["ogr","⛔ Ograniczenia"],["plan","🗓️ Plan"],["eks","🖨️ Eksport"]];
   document.getElementById("tabs").innerHTML = tabs.map(function(t){
@@ -1713,12 +1741,12 @@ function renderDane(){
   if (!S.activities.length) h += '<p class="hint">Brak zajęć — dodaj pierwszy wiersz albo skorzystaj z importu poniżej.</p>';
   S.activities.forEach(function(a){
     h += '<div class="act">'
-       + '<select class="inp" onchange="setAct(\'' + a.id + '\',\'classId\',this.value)">' + opts(S.classes, a.classId) + "</select>"
+       + '<select class="inp" onchange="setAct(\'' + a.id + '\',\'classId\',this.value)">' + opts(sortedClasses(), a.classId) + "</select>"
        + '<select class="inp" style="max-width:118px" title="Zajęcia łączone — prowadzone w dwóch klasach naraz (np. religia)" onchange="setAct(\'' + a.id + '\',\'withClassId\',this.value)">'
        + '<option value=""' + (!a.withClassId ? " selected" : "") + '>— sama klasa —</option>'
-       + S.classes.filter(function(c){ return c.id !== a.classId; }).map(function(c){ return '<option value="' + c.id + '"' + (a.withClassId === c.id ? " selected" : "") + ">" + esc(c.name) + "</option>"; }).join("")
+       + sortedClasses().filter(function(c){ return c.id !== a.classId; }).map(function(c){ return '<option value="' + c.id + '"' + (a.withClassId === c.id ? " selected" : "") + ">" + esc(c.name) + "</option>"; }).join("")
        + "</select>"
-       + '<select class="inp" title="Nauczyciel" onchange="setAct(\'' + a.id + '\',\'teacherId\',this.value)"><option value=""' + (!a.teacherId ? " selected" : "") + '>— bez naucz. —</option>' + opts(S.teachers, a.teacherId) + "</select>"
+       + '<select class="inp" title="Nauczyciel" onchange="setAct(\'' + a.id + '\',\'teacherId\',this.value)"><option value=""' + (!a.teacherId ? " selected" : "") + '>— bez naucz. —</option>' + opts(sortedTeachers(), a.teacherId) + "</select>"
        + '<input class="inp" placeholder="przedmiot" value="' + esc(a.subject) + '" onchange="setAct(\'' + a.id + '\',\'subject\',this.value)">'
        + '<select class="inp" style="max-width:150px" title="Rodzaj zajęć" onchange="setAct(\'' + a.id + '\',\'kind\',this.value)">'
        + '<option value="dyd"' + (kindOf(a) === "dyd" ? " selected" : "") + '>Dydaktyczne</option>'
@@ -2235,7 +2263,7 @@ function renderOgr(){
   if (!S.teachers.length) h += '<p class="hint">Najpierw dodaj nauczycieli w zakładce Dane.</p>';
   else {
     var t = null; S.teachers.forEach(function(x){ if (x.id === tid) t = x; });
-    h += '<div class="row"><span class="lbl">Nauczyciel:</span><select class="inp" onchange="ogrSet(this.value)">' + opts(S.teachers, tid) + "</select></div>";
+    h += '<div class="row"><span class="lbl">Nauczyciel:</span><select class="inp" onchange="ogrSet(this.value)">' + opts(sortedTeachers(), tid) + "</select></div>";
     var lt = lessonTimes();
     h += '<div style="overflow-x:auto"><table class="unav"><tr><th></th>';
     for (var i = 0; i < NH; i++) h += "<th>lek. " + (i + 1) + "<br><span class='sub'>" + esc(lt[i]) + "</span></th>";
@@ -2265,7 +2293,7 @@ function renderOgr(){
       var chk = availCheck(r, hM);
       var daysStr = r.days.map(function(sp, d){ return DAYS[d].slice(0, 2) + (sp.blocked.length ? "✕" + sp.blocked.join(",") : "·"); }).join(" ");
       h += '<tr><td><input type="checkbox"' + (r.on ? " checked" : "") + ' onchange="availChk(' + ri + ', this.checked)"></td>';
-      h += '<td><select class="inp" onchange="availSetT(' + ri + ', this.value)">' + (r.tid ? opts(S.teachers, r.tid) : '<option value="">— wybierz —</option>' + opts(S.teachers, "")) + '</select>';
+      h += '<td><select class="inp" onchange="availSetT(' + ri + ', this.value)">' + (r.tid ? opts(sortedTeachers(), r.tid) : '<option value="">— wybierz —</option>' + opts(sortedTeachers(), "")) + '</select>';
       if (r.note) h += '<br><span class="sub">' + esc(r.note.slice(0, 60)) + "</span>";
       h += '</td><td style="font-size:11px;white-space:nowrap">' + daysStr + '</td><td style="font-size:11px">' + chk.msg + "</td></tr>";
     });
@@ -2279,7 +2307,7 @@ function renderOgr(){
     var cidO = S.classes.some(function(c){ return c.id === ogrC; }) ? ogrC : (S.classes[0] ? S.classes[0].id : "");
     ogrC = cidO;
     var cO = null; S.classes.forEach(function(x){ if (x.id === cidO) cO = x; });
-    h += '<div class="row"><span class="lbl">Oddział:</span><select class="inp" onchange="ogrCSet(this.value)">' + opts(S.classes, cidO) + "</select></div>";
+    h += '<div class="row"><span class="lbl">Oddział:</span><select class="inp" onchange="ogrCSet(this.value)">' + opts(sortedClasses(), cidO) + "</select></div>";
     var ltC = lessonTimes();
     h += '<div style="overflow-x:auto"><table class="unav"><tr><th></th>';
     for (var iC = 0; iC < NH; iC++) h += "<th>lek. " + (iC + 1) + "<br><span class='sub'>" + esc(ltC[iC]) + "</span></th>";
@@ -2330,10 +2358,9 @@ function renderOgr(){
   if (isTchUI)
     h += '<div class="row"><span class="lbl">Nauczyciel:</span><select id="r_tch" class="inp" onchange="ruleDS(\'tch\')">'
       + (S.teachers.length ? "" : '<option value="">— najpierw dodaj nauczycieli —</option>')
-      + S.teachers.map(function(t){ return '<option value="' + t.id + '"' + (ruleDraft.tch === t.id ? " selected" : "") + ">" + esc(t.name) + "</option>"; }).join("")
+      + sortedTeachers().map(function(t){ return '<option value="' + t.id + '"' + (ruleDraft.tch === t.id ? " selected" : "") + ">" + esc(t.name) + "</option>"; }).join("")
       + "</select></div>";
-  var subsR = [], seenR2 = {};
-  S.activities.forEach(function(a){ var k2 = normName(a.subject); if (!seenR2[k2]){ seenR2[k2] = 1; subsR.push(a.subject); } });
+  var subsR = sortedSubjects();
   if (!isTchUI || ruleTyp === "tchMaxDays" || ruleTyp === "tchBlock")
     h += '<div class="row"><span class="lbl">' + (isTchUI ? "Przedmiot (opcjonalnie):" : "Przedmiot:") + '</span><select id="r_sub" class="inp" onchange="ruleDS(\'sub\')">'
     + (subsR.length ? "" : '<option value="">— najpierw dodaj zajęcia —</option>')
@@ -2368,7 +2395,7 @@ function renderOgr(){
   }
   if (!isTchUI)
     h += '<div class="row"><span class="lbl">Oddział:</span><select id="r_kl" class="inp" onchange="ruleDS(\'kl\')"><option value="">wszystkie oddziały</option>'
-    + S.classes.map(function(c){ return '<option value="' + c.id + '"' + (ruleDraft.kl === c.id ? " selected" : "") + ">" + esc(c.name) + "</option>"; }).join("")
+    + sortedClasses().map(function(c){ return '<option value="' + c.id + '"' + (ruleDraft.kl === c.id ? " selected" : "") + ">" + esc(c.name) + "</option>"; }).join("")
     + "</select></div>";
   h += '<div class="row"><select id="r_hard" class="inp" onchange="ruleDS(\'hard\')"><option value="hard"' + (ruleDraft.hard !== "soft" ? " selected" : "") + '>🔒 Twarda — zawsze</option><option value="soft"' + (ruleDraft.hard === "soft" ? " selected" : "") + '>🪶 Miękka — kara</option></select>'
     + '<span class="lbl">waga:</span><input id="r_w" class="inp" style="width:64px" type="number" min="10" value="' + esc(ruleDraft.w) + '"' + (ruleDraft.hard === "soft" ? "" : " disabled") + "></div>";
@@ -2504,7 +2531,7 @@ function renderPlan(){
   var ls = lessons(), placement = S.placement;
   var unplaced = ls.filter(function(l){ return placement[l.id] == null; });
   var placed = ls.length - unplaced.length;
-  var ents = viewMode === "class" ? S.classes : S.teachers;
+  var ents = viewMode === "class" ? sortedClasses() : sortedTeachers();
   var h = '<div class="row">';
   h += '<select class="inp" onchange="setViewMode(this.value)"><option value="class"' + (viewMode === "class" ? " selected" : "") + '>Widok: oddział</option><option value="teacher"' + (viewMode === "teacher" ? " selected" : "") + ">Widok: nauczyciel</option></select>";
   if (!ents.length){
