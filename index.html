@@ -170,7 +170,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.11.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.12.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -221,6 +221,8 @@ function normalize(p){
   if (p.settings.wSwMid == null) p.settings.wSwMid = 40;
   if (p.settings.wAutBlock == null) p.settings.wAutBlock = 40;
   if (p.settings.wPair == null) p.settings.wPair = 120;
+  if (p.settings.classMaxGapsPerDay == null) p.settings.classMaxGapsPerDay = 1;
+  if (p.settings.wClassGapDay == null) p.settings.wClassGapDay = 150;
   p.classes.forEach(function(c){ if (c.rew == null) c.rew = rewFromName(c.name); if (!Array.isArray(c.blocked)) c.blocked = []; });
   p.activities.forEach(function(a){ if (a.group == null) a.group = ""; if (a.withClassId == null) a.withClassId = ""; if (a.link == null) a.link = ""; });
   if (!p.placement) p.placement = {};
@@ -296,7 +298,7 @@ function sps7State(){
     settings: {
       teacherMaxPerDay: 7, classMaxPerDay: 7, lessonTimes: defaultLessonTimes(),
       friMax7: true, blockedSlots: [39], maxGaps: 2, gapExceptions: "", autBlocks: true, rules: [], assistantUrl: "", chatToken: "",
-      wTeacherGap: 150, wClassGap: 150, wSwMid: 40, wAutBlock: 40, wPair: 120,
+      wTeacherGap: 150, wClassGap: 150, wSwMid: 40, wAutBlock: 40, wPair: 120, classMaxGapsPerDay: 1, wClassGapDay: 150,
       pairs: [{cls:"5a M",a:"polski",b:"matematyka"},{cls:"6a M",a:"polski",b:"matematyka"},{cls:"6b",a:"polski",b:"matematyka"},{cls:"7a",a:"polski",b:"matematyka"}]
     }
   };
@@ -420,7 +422,9 @@ function softPenalty(ls, teachers, classes, settings, placement){
     }
   }
   var cg = settings.classMaxGaps == null ? 1 : settings.classMaxGaps;
-  if (cg > 0){
+  var gd = settings.classMaxGapsPerDay == null ? 1 : settings.classMaxGapsPerDay;
+  var wGD = settings.wClassGapDay == null ? 150 : Math.max(0, +settings.wClassGapDay || 0);
+  if (cg > 0 || gd > 0){
     var cdays = {};
     ls.forEach(function(L){ var s = placement[L.id]; if (s == null) return;
       L.classIds.forEach(function(cid){
@@ -429,7 +433,13 @@ function softPenalty(ls, teachers, classes, settings, placement){
       }); });
     for (var ck in cdays){
       var gc = 0; for (var dc = 0; dc < 5; dc++) gc += dayGaps(cdays[ck][dc]);
-      if (wCG > 0 && gc > cg){ pen += wCG * (gc - cg); det.push("Klasa " + names[ck] + ": " + gc + " okienek w tygodniu (limit " + cg + ")"); }
+      if (wCG > 0 && cg > 0 && gc > cg){ pen += wCG * (gc - cg); det.push("Klasa " + names[ck] + ": " + gc + " okienek w tygodniu (limit " + cg + ")"); }
+      if (wGD > 0 && gd > 0){
+        for (var dcG = 0; dcG < 5; dcG++){
+          var gcD = dayGaps(cdays[ck][dcG]);
+          if (gcD > gd){ pen += wGD * (gcD - gd); det.push("Klasa " + names[ck] + ": " + gcD + (gcD === 2 ? " okienka" : " okienek") + " w jednym dniu — " + DAYS[dcG] + " (limit dzienny " + gd + ")"); }
+        }
+      }
     }
   }
   var softR = rulesOn(settings).filter(function(r){ return !r.hard; });
@@ -591,10 +601,10 @@ function repairSoft(ls, teachers, classes, settings, placement){
     if (L.teacherId && unavail[L.teacherId] && unavail[L.teacherId][s]) return false;
     if (L.teacherId && busyT[L.teacherId] && busyT[L.teacherId][s]) return false;
     for (var cb2 = 0; cb2 < L.classIds.length; cb2++) if (clsBlock[L.classIds[cb2]][s]) return false;
+    var sOldR = placement[L.id]; /* musi być POZA pętlą reguł — gdy brak reguł, nadal znamy stary slot */
     for (var rf = 0; rf < hardR.length; rf++){
       var rr2 = hardR[rf];
       if (!ruleMatch(rr2, L)) continue;
-      var sOldR = placement[L.id];
       if (!ruleSlotOk(rr2, L, s, settings, function(d2){
         var cR = cntSD[L.classIds[0] + "|" + d2 + "|" + L.subject] || 0;
         if (sOldR != null && Math.floor(sOldR / NH) === d2) cR--;
@@ -608,6 +618,38 @@ function repairSoft(ls, teachers, classes, settings, placement){
         if (ixF >= 0) outF.splice(ixF, 1); /* przenoszona lekcja nie może sama sobie blokować nowego slotu */
         return outF;
       })) return false;
+    }
+    var gdR2 = settings.classMaxGapsPerDay == null ? 1 : settings.classMaxGapsPerDay;
+    for (var cgR = 0; cgR < L.classIds.length; cgR++){
+      var cidR = L.classIds[cgR];
+      var lcR = arr(loadC, cidR)[d];
+      if (sOldR != null && Math.floor(sOldR / NH) === d){
+        var vOldC = busyC[cidR] && busyC[cidR][sOldR];
+        if (!vOldC || vOldC.length <= 1) lcR--; /* stary slot zwolni się tylko wtedy, gdy nie zostaje na nim inna lekcja (rew/grupy równoległe) */
+      }
+      var vNewC = busyC[cidR] && busyC[cidR][s];
+      if (lcR + (vNewC && vNewC.length ? 0 : 1) > settings.classMaxPerDay) return false;
+      if (gdR2 > 0){
+        var hsR2 = [h];
+        for (var shR = d * NH; shR < d * NH + NH; shR++){
+          var vR2 = busyC[cidR] && busyC[cidR][shR];
+          if (sOldR != null && shR === sOldR){
+            if (vR2 && vR2.length > 1 && hsR2.indexOf(shR % NH) < 0) hsR2.push(shR % NH); /* stary slot zostaje zajęty, gdy co innego na nim zostaje */
+            continue;
+          }
+          if (vR2 && vR2.length && hsR2.indexOf(shR % NH) < 0) hsR2.push(shR % NH); /* dedup: slot docelowy może być zajęty przez rew */
+        }
+        if (dayGaps(hsR2) > gdR2) return false;
+        if (sOldR != null && Math.floor(sOldR / NH) !== d){
+          var d0R = Math.floor(sOldR / NH), hsR3 = [];
+          for (var shR3 = d0R * NH; shR3 < d0R * NH + NH; shR3++){
+            if (shR3 === sOldR) continue;
+            var vR3 = busyC[cidR] && busyC[cidR][shR3];
+            if (vR3 && vR3.length && hsR3.indexOf(shR3 % NH) < 0) hsR3.push(shR3 % NH);
+          }
+          if (dayGaps(hsR3) > gdR2) return false;
+        }
+      }
     }
     var lk = kindL(L);
     for (var ci = 0; ci < L.classIds.length; ci++){
@@ -788,6 +830,20 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
         for (var rc = 0; rc < L.classIds.length; rc++){ var v = busyC[L.classIds[rc]] && busyC[L.classIds[rc]][sn]; if (v) out = out.concat(v); }
         return out;
       }, function(){ return subjSlot[L.classIds[0] + "|" + L.subject + "|" + (L.group || "")] || []; })) return false;
+    }
+    var gdF = settings.classMaxGapsPerDay == null ? 1 : settings.classMaxGapsPerDay;
+    for (var cgF = 0; cgF < L.classIds.length; cgF++){
+      var cidF = L.classIds[cgF];
+      if (arr(loadC, cidF)[d] >= settings.classMaxPerDay) return false;
+      if (gdF > 0){
+        var hsF = [h];
+        for (var shF = d * NH; shF < d * NH + NH; shF++){
+          if (shF === s) continue;
+          var vF = busyC[cidF] && busyC[cidF][shF];
+          if (vF && vF.length) hsF.push(shF % NH);
+        }
+        if (dayGaps(hsF) > gdF) return false;
+      }
     }
     var lk = kindL(L);
     for (var ci = 0; ci < L.classIds.length; ci++){
@@ -984,6 +1040,15 @@ function findViolations(ls, teachers, classes, placement, settings){
   }
   for (var tk in loadT) for (var dd = 0; dd < 5; dd++) if (loadT[tk][dd] > settings.teacherMaxPerDay) errs.push(tNm(tk) + " ma " + loadT[tk][dd] + " lekcji w " + DAYS[dd] + " (limit " + settings.teacherMaxPerDay + ")");
   for (var ck in loadC) for (var dc = 0; dc < 5; dc++) if (loadC[ck][dc] > settings.classMaxPerDay) errs.push("Klasa " + cNm(ck) + " ma " + loadC[ck][dc] + " lekcji w " + DAYS[dc] + " (limit " + settings.classMaxPerDay + ")");
+  var gdV = settings.classMaxGapsPerDay == null ? 1 : settings.classMaxGapsPerDay;
+  if (gdV > 0) for (var ckG in byClsSlot){
+    var dHrs = [[],[],[],[],[]];
+    for (var sK2 in byClsSlot[ckG]) dHrs[Math.floor(+sK2 / NH)].push(+sK2 % NH);
+    for (var dG = 0; dG < 5; dG++){
+      var gG = dayGaps(dHrs[dG]);
+      if (gG > gdV) errs.push("Klasa " + cNm(ckG) + " ma " + gG + (gG < 5 ? " okienka" : " okienek") + " w " + DAYS[dG] + " (limit dzienny " + gdV + ")");
+    }
+  }
   var hrs = rulesOn(settings).filter(function(r){ return r.hard; });
   if (hrs.length){
     var bsV = {}, csV = {}, svM = {};
@@ -1843,6 +1908,7 @@ function toggleBlock(s){
 }
 function setMaxGaps(v){ S.settings.maxGaps = Math.max(0, Math.min(20, parseInt(v) || 0)); save(); render(); }
 function setClassMaxGaps(v){ S.settings.classMaxGaps = Math.max(0, Math.min(20, parseInt(v) || 0)); save(); render(); }
+function setClassMaxGapsPerDay(v){ S.settings.classMaxGapsPerDay = Math.max(0, Math.min(8, parseInt(v) || 0)); save(); render(); }
 function setGapExc(v){ S.settings.gapExceptions = v; save(); }
 function addPair(){ S.settings.pairs.push({ cls: "", a: "", b: "" }); save(); render(); }
 function setPair(i, k, v){ if (S.settings.pairs[i]) S.settings.pairs[i][k] = v; save(); }
@@ -1978,6 +2044,7 @@ function renderOgr(){
   h += '<p class="hint">Im większa waga, tym mocniej „🪄 Wygeneruj automatycznie” omija dany problem. <b>0 = nie liczy się w ogóle</b> (wbudowaną zasadę można tak „wyłączyć”). Reguły własne (miękkie) mają swoje wagi w karcie 📐 powyżej.</p>';
   h += '<div class="row"><span class="lbl" style="min-width:230px">Okienka nauczyciela (za każde ponad limit):</span><input class="inp" type="number" min="0" max="2000" style="width:70px" value="' + S.settings.wTeacherGap + '" onchange="setPenW(\'wTeacherGap\',this.value)"><span class="hint" style="margin:0">domyślnie 150</span></div>';
   h += '<div class="row"><span class="lbl" style="min-width:230px">Okienka klasy (za każde ponad limit):</span><input class="inp" type="number" min="0" max="2000" style="width:70px" value="' + S.settings.wClassGap + '" onchange="setPenW(\'wClassGap\',this.value)"><span class="hint" style="margin:0">domyślnie 150</span></div>';
+  h += '<div class="row"><span class="lbl" style="min-width:230px">Okienka klasy w jednym dniu (za każde ponad limit):</span><input class="inp" type="number" min="0" max="2000" style="width:70px" value="' + (S.settings.wClassGapDay == null ? 150 : S.settings.wClassGapDay) + '" onchange="setPenW(\'wClassGapDay\',this.value)"><span class="hint" style="margin:0">domyślnie 150</span></div>';
   h += '<div class="row"><span class="lbl" style="min-width:230px">Świetlica/ŚAW na lekcjach 3–5 (za lekcję):</span><input class="inp" type="number" min="0" max="2000" style="width:70px" value="' + S.settings.wSwMid + '" onchange="setPenW(\'wSwMid\',this.value)"><span class="hint" style="margin:0">domyślnie 40</span></div>';
   h += '<div class="row"><span class="lbl" style="min-width:230px">Rozbite bloki godzin wychowawcy w AUT (za przerwę):</span><input class="inp" type="number" min="0" max="2000" style="width:70px" value="' + S.settings.wAutBlock + '" onchange="setPenW(\'wAutBlock\',this.value)"><span class="hint" style="margin:0">domyślnie 40</span></div>';
   h += '<div class="row"><span class="lbl" style="min-width:230px">Para przedmiotów nie ułożona obok siebie (za parę):</span><input class="inp" type="number" min="0" max="2000" style="width:70px" value="' + S.settings.wPair + '" onchange="setPenW(\'wPair\',this.value)"><span class="hint" style="margin:0">domyślnie 120</span></div>';
@@ -2013,6 +2080,7 @@ function renderOgr(){
   h += '<div class="row"><label style="display:flex;gap:7px;align-items:center;cursor:pointer"><input type="checkbox"' + (S.settings.autBlocks ? " checked" : "") + ' onchange="setChk(\'autBlocks\',this.checked)"> <span>Klasy AUT: godziny wychowawcy w blokach „jedna po drugie"</span></label></div>';
   h += '<div class="row"><span class="lbl">Maks. okienek nauczyciela / tydzień:</span><input class="inp" type="number" min="0" max="20" style="width:70px" value="' + (S.settings.maxGaps || 0) + '" onchange="setMaxGaps(this.value)"><span class="hint" style="margin:0">0 = bez limitu</span></div>';
   h += '<div class="row"><span class="lbl">Maks. okienek klasy / tydzień:</span><input class="inp" type="number" min="0" max="20" style="width:70px" value="' + (S.settings.classMaxGaps == null ? 1 : S.settings.classMaxGaps) + '" onchange="setClassMaxGaps(this.value)"><span class="hint" style="margin:0">0 = bez limitu</span></div>';
+  h += '<div class="row"><span class="lbl">Maks. okienek klasy w jednym dniu:</span><input class="inp" type="number" min="0" max="8" style="width:70px" value="' + (S.settings.classMaxGapsPerDay == null ? 1 : S.settings.classMaxGapsPerDay) + '" onchange="setClassMaxGapsPerDay(this.value)"><span class="hint" style="margin:0">0 = bez limitu</span></div>';
   h += '<div class="row" style="flex-wrap:wrap"><span class="lbl" style="align-self:flex-start">Wyjątki od limitu okienek:</span><input class="inp" style="flex:1;min-width:220px" placeholder="nazwiska rozdzielone przecinkami" value="' + esc(S.settings.gapExceptions || "") + '" onchange="setGapExc(this.value)"></div>';
   h += '<p class="hint">Wyjątki zapisują się wyłącznie w tej przeglądarce — nie wychodzą nigdzie poza urządzenie.</p>';
   h += '<div class="row"><span class="lbl">Pary przedmiotów „jedna po drugiej":</span></div>';
