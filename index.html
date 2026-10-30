@@ -169,7 +169,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.19.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.20.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -2828,6 +2828,265 @@ function openZbiorcza(){
   w.document.write(planszaZbiorczaHtml());
   w.document.close();
 }
+/* ==================== v6.20: plansza A1 — format szkolny (Excel + wydruk) ==================== */
+/* kod klasy wg szkolnej konwencji: 1a, 2aA, 2bM, 3aA, 3bA, 3cA, 4aA, 5aM, 5 ZET→5z, 6A, 6aM, 6b, 7a, 7A, 8z */
+function schoolClassCode(name){
+  var s = String(name || "").trim();
+  var m = /^(\d+)(?:\s*([a-z]))?/.exec(s);
+  var base = m ? m[1] + (m[2] || "") : s;
+  var low = " " + s.toLowerCase() + " ";
+  if (/(^|[^a-z])m([^a-z]|$)/.test(low)) base += "M";
+  else if (low.indexOf("aut") >= 0) base += "A";
+  else if (low.indexOf("zet") >= 0) base += "z";
+  return base;
+}
+var A1_SCHOOL_ORDER = ["1a","2aA","2bM","3aA","5aM","6aM","6b","7a","3bA","3cA","4aA","6A","7A","5z","8z"];
+function a1Classes(){
+  return S.classes.slice().sort(function(a, b){
+    var ka = A1_SCHOOL_ORDER.indexOf(schoolClassCode(a.name)), kb = A1_SCHOOL_ORDER.indexOf(schoolClassCode(b.name));
+    if (ka < 0 && kb < 0) return 0;
+    if (ka < 0) return 1;
+    if (kb < 0) return -1;
+    return ka - kb;
+  });
+}
+/* dane planszy A1: klasy w szkolnej kolejności, nauczyciele z ułożonymi lekcjami, teksty komórek */
+function a1Build(){
+  var ls = lessons(), placement = S.placement, bySlot = lessonsBySlot(ls, placement);
+  var inits = teacherInits();
+  var classes = a1Classes();
+  var classCodes = {};
+  classes.forEach(function(c){ classCodes[c.id] = schoolClassCode(c.name); });
+  var used = {};
+  ls.forEach(function(L){ if (L.teacherId) used[L.teacherId] = true; });
+  function words(t){ return String(t.name || "").replace(/\./g, " ").split(/\s+/).filter(Boolean); }
+  function surname(t){ var w = words(t); return w.length ? w[w.length - 1] : ""; }
+  function firstIni(t){ var w = words(t); return w.length > 1 ? w[0][0].toUpperCase() + ". " : ""; }
+  var teachers = S.teachers.filter(function(t){ return used[t.id]; }).sort(function(a, b){ return surname(a).localeCompare(surname(b), "pl"); });
+  function isSw(L){ return /świetlic/i.test(L.subject); }
+  function cellText(cId, sl){
+    var cell = (bySlot[sl] || []).filter(function(L){ return L.classIds.indexOf(cId) >= 0; });
+    return cell.map(function(L){ return abbr(L.subject) + (L.teacherId && inits[L.teacherId] ? " " + inits[L.teacherId] : ""); }).join("\n");
+  }
+  function swText(sl){
+    var cell = (bySlot[sl] || []).filter(isSw);
+    return cell.map(function(L){ return abbr(L.subject) + (L.teacherId && inits[L.teacherId] ? " " + inits[L.teacherId] : ""); }).join("\n");
+  }
+  function tCell(tId, sl){
+    var cell = (bySlot[sl] || []).filter(function(L){ return L.teacherId === tId; });
+    return cell.map(function(L){
+      if (!L.classIds || !L.classIds.length) return isSw(L) ? "ŚW" : abbr(L.subject);
+      return L.classIds.map(function(id){ return classCodes[id] || cName(id); }).join("/");
+    }).join("\n");
+  }
+  return { classes: classes, classCodes: classCodes, teachers: teachers, bySlot: bySlot, inits: inits,
+    cellText: cellText, swText: swText, tCell: tCell, isSw: isSw, firstIni: firstIni, surname: surname };
+}
+/* ----- xlsx: minimalny arkusz w konwencji szkolnej planszy A1 ----- */
+function a1ColLetter(n){ var s = ""; while (n > 0){ var m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
+function a1XlsxParts(){
+  var d = a1Build();
+  var nC = d.classes.length, nT = d.teachers.length;
+  var colS = 4 + nC;           /* kolumna Świetlicy */
+  var colT0 = colS + 1;        /* pierwsza kolumna nauczyciela */
+  var lastCol = nT ? (colT0 + nT - 1) : colS;
+  var bands = [
+    { name: "PONIEDZIAŁEK", row0: 5 }, { name: "WTOREK", row0: 14 }, { name: "ŚRODA", row0: 23 },
+    { name: "CZWARTEK", row0: 32 }, { name: "PIĄTEK", row0: 41 }
+  ];
+  var seps = [13, 22, 31, 40, 49];
+  var lt = lessonTimes();
+  function timeRange(h){ return lt[h] + " - " + endOfLesson(lt[h]); }
+  function L(n){ return a1ColLetter(n); }
+  function cStr(col, row, sIdx, txt){ return '<c r="' + L(col) + row + '" s="' + sIdx + '" t="inlineStr"><is><t xml:space="preserve">' + esc(txt) + '</t></is></c>'; }
+  function cNum(col, row, sIdx, v){ return '<c r="' + L(col) + row + '" s="' + sIdx + '"><v>' + v + '</v></c>'; }
+  function cEmp(col, row, sIdx){ return '<c r="' + L(col) + row + '" s="' + sIdx + '"/>'; }
+  var rows = [];
+  /* rz. 1-2: tytuł + rok szkolny (scalone) */
+  rows.push('<row r="1">' + cStr(1, 1, 1, "TYGODNIOWY ROZKŁAD ZAJĘĆ") + (nT ? cStr(colT0, 1, 2, "Rok szkolny 2026 / 2027") : "") + "</row>");
+  /* rz. 3: nagłówki bloków */
+  var r3 = '<row r="3">' + cStr(4, 3, 3, "K L A S Y  ( O D D Z I A Ł Y )") + cStr(colS, 3, 5, "ŚWIETLICA\nSZKOLNA");
+  if (nT) r3 += cStr(colT0, 3, 3, "Nauczyciele (przydział godzin lekcyjnych w klasach)");
+  rows.push(r3 + "</row>");
+  /* rz. 4: kody klas + nazwiska nauczycieli */
+  var r4 = '<row r="4">';
+  for (var i = 0; i < nC; i++) r4 += cStr(4 + i, 4, 3, d.classCodes[d.classes[i].id]);
+  r4 += cEmp(colS, 4, 5);
+  for (var j = 0; j < nT; j++) r4 += cStr(colT0 + j, 4, 6, d.firstIni(d.teachers[j]) + d.surname(d.teachers[j]));
+  rows.push(r4 + "</row>");
+  /* pasma dni */
+  bands.forEach(function(b){
+    for (var h = 0; h < NH; h++){
+      var row = b.row0 + h, sl = (bands.indexOf(b)) * NH + h;
+      var rXml = '<row r="' + row + '">';
+      rXml += (h === 0 ? cStr(1, row, 7, b.name) : cEmp(1, row, 7));
+      rXml += cNum(2, row, 8, h + 1) + cStr(3, row, 9, timeRange(h));
+      for (var ci = 0; ci < nC; ci++){
+        var txt = d.cellText(d.classes[ci].id, sl);
+        rXml += txt ? cStr(4 + ci, row, 10, txt) : cEmp(4 + ci, row, 10);
+      }
+      var sw = d.swText(sl);
+      rXml += sw ? cStr(colS, row, 10, sw) : cEmp(colS, row, 10);
+      for (var ti = 0; ti < nT; ti++){
+        var tc = d.tCell(d.teachers[ti].id, sl);
+        rXml += tc ? cStr(colT0 + ti, row, 10, tc) : cEmp(colT0 + ti, row, 10);
+      }
+      rows.push(rXml + "</row>");
+    }
+  });
+  /* rzędy-separatory (puste, z siatką) */
+  seps.forEach(function(row){
+    var rXml = '<row r="' + row + '">';
+    for (var col = 1; col <= lastCol; col++) rXml += cEmp(col, row, 11);
+    rows.push(rXml + "</row>");
+  });
+  /* scalenia */
+  var merges = ["A1:" + L(colS - 1) + "2"];
+  if (nT){ merges.push(L(colT0) + "1:" + L(lastCol) + "2"); merges.push(L(colT0) + "3:" + L(lastCol) + "3"); }
+  merges.push("D3:" + L(colS - 1) + "3", L(colS) + "3:" + L(colS) + "4");
+  bands.forEach(function(b){ merges.push("A" + b.row0 + ":A" + (b.row0 + NH - 1)); });
+  seps.forEach(function(row){ merges.push("A" + row + ":" + L(lastCol) + row); });
+  var mergeXml = '<mergeCells count="' + merges.length + '">' + merges.map(function(m){ return '<mergeCell ref="' + m + '"/>'; }).join("") + "</mergeCells>";
+  /* szerokości kolumn */
+  var colsXml = '<cols>' +
+    '<col min="1" max="1" width="6" customWidth="1"/>' +
+    '<col min="2" max="2" width="4" customWidth="1"/>' +
+    '<col min="3" max="3" width="14" customWidth="1"/>' +
+    '<col min="4" max="' + (colS - 1) + '" width="7.4" customWidth="1"/>' +
+    '<col min="' + colS + '" max="' + colS + '" width="9" customWidth="1"/>' +
+    (nT ? '<col min="' + colT0 + '" max="' + lastCol + '" width="5.5" customWidth="1"/>' : "") +
+    "</cols>";
+  var sheet1 = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:' + L(lastCol) + '49"/>' +
+    '<sheetViews><sheetView showGridLines="0" workbookViewId="0"/></sheetViews>' + colsXml +
+    "<sheetData>" + rows.join("") + "</sheetData>" + mergeXml +
+    '<pageMargins left="0.75" right="0.75" top="1" bottom="1" header="0" footer="0"/>' +
+    '<pageSetup orientation="landscape" fitToWidth="1" fitToHeight="1"/></worksheet>';
+  var styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    '<fonts count="5">' +
+    '<font><sz val="11"/><name val="Calibri"/></font>' +
+    '<font><b/><sz val="24"/><name val="Calibri"/></font>' +
+    '<font><b/><sz val="14"/><name val="Calibri"/></font>' +
+    '<font><b/><sz val="12"/><name val="Calibri"/></font>' +
+    '<font><b/><sz val="9"/><name val="Calibri"/></font>' +
+    "</fonts>" +
+    '<fills count="4">' +
+    '<fill><patternFill patternType="none"/></fill>' +
+    '<fill><patternFill patternType="gray125"/></fill>' +
+    '<fill><patternFill patternType="solid"><fgColor rgb="FFDDDDDD"/><bgColor indexed="64"/></patternFill></fill>' +
+    '<fill><patternFill patternType="solid"><fgColor rgb="FFEEEEEE"/><bgColor indexed="64"/></patternFill></fill>' +
+    "</fills>" +
+    '<borders count="2">' +
+    "<border><left/><right/><top/><bottom/><diagonal/></border>" +
+    '<border><left style="thin"><color auto="1"/></left><right style="thin"><color auto="1"/></right><top style="thin"><color auto="1"/></top><bottom style="thin"><color auto="1"/></bottom><diagonal/></border>' +
+    "</borders>" +
+    '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+    '<cellXfs count="12">' +
+    '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+    '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
+    '<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>' +
+    '<xf numFmtId="0" fontId="3" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
+    '<xf numFmtId="0" fontId="4" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>' +
+    '<xf numFmtId="0" fontId="3" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>' +
+    '<xf numFmtId="0" fontId="3" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
+    '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
+    '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
+    '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>' +
+    '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"/>' +
+    '<xf numFmtId="0" fontId="3" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
+    "</cellXfs>" +
+    '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>' +
+    "</styleSheet>";
+  var contentTypes = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>';
+  var rootRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>';
+  var workbook = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Plan Lekcji" sheetId="1" r:id="rId1"/></sheets></workbook>';
+  var wbRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>';
+  return [
+    { name: "[Content_Types].xml", data: contentTypes },
+    { name: "_rels/.rels", data: rootRels },
+    { name: "xl/workbook.xml", data: workbook },
+    { name: "xl/_rels/workbook.xml.rels", data: wbRels },
+    { name: "xl/styles.xml", data: styles },
+    { name: "xl/worksheets/sheet1.xml", data: sheet1 }
+  ];
+}
+function downloadA1(){
+  if (!S.classes.length){ flash("Najpierw dodaj oddziały w zakładce Dane.", "warn"); return; }
+  var u8 = zipWrite(a1XlsxParts());
+  var blob = new Blob([u8], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "plansza-A1-tygodniowa.xlsx";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 3000);
+  flash("📊 Zapisano planszę A1 (.xlsx) — otworzysz ją w Excelu.", "ok");
+}
+/* ----- wydruk HTML planszy A1 (konwencja szkolna, papier A1 poziomo) ----- */
+function planszaA1Html(){
+  var d = a1Build();
+  var lt = lessonTimes();
+  var nC = d.classes.length, nT = d.teachers.length;
+  function hhmm(t){ return t.replace(/^(\d):/, "0$1:") + "-" + endOfLesson(t).replace(/^(\d):/, "0$1:"); }
+  var nCols = nC + nT + 2;
+  var css = "<style>"
+    + "@page { size: A1 landscape; margin: 6mm; }"
+    + "* { box-sizing: border-box; margin: 0; padding: 0; }"
+    + "body { font-family: Arial, 'Segoe UI', sans-serif; background: #f2f4f7; }"
+    + ".bar { position: sticky; top: 0; z-index: 9; background: #1f2d3d; color: #fff; padding: 3mm 6mm; display: flex; gap: 6mm; align-items: center; flex-wrap: wrap; }"
+    + ".bar button { font-size: 4mm; padding: 1.5mm 5mm; border: 0; border-radius: 2mm; background: #4a90d9; color: #fff; cursor: pointer; }"
+    + "@media print { .bar { display: none; } body { background: #fff; } }"
+    + ".pl { width: 820mm; padding: 4mm; background: #fff; margin: 6mm auto; }"
+    + ".title { text-align: center; font-size: 13mm; font-weight: bold; letter-spacing: 3mm; }"
+    + ".yr { text-align: right; font-size: 6mm; font-weight: bold; margin: 1mm 2mm 3mm; }"
+    + "table { width: 100%; border-collapse: collapse; table-layout: fixed; }"
+    + "th, td { border: 0.3mm solid #444; font-size: 3.8mm; padding: 1.2mm 0.5mm; text-align: center; vertical-align: middle; word-wrap: break-word; }"
+    + "th { background: #dddddd; font-size: 4.2mm; }"
+    + "th.sw { font-size: 3.4mm; }"
+    + "th.hr, td.hr { width: 26mm; background: #eeeeee; white-space: nowrap; font-weight: bold; font-size: 3.6mm; }"
+    + "th.day { background: #1f2d3d; color: #fff; font-size: 5mm; letter-spacing: 2mm; }"
+    + "td.empty { color: #ccc; }"
+    + "td b { font-size: 3.8mm; } td i { font-style: normal; font-weight: bold; font-size: 3.4mm; }"
+    + ".le { display: block; margin: 0.2mm 0; }"
+    + "</style>";
+  var body = '<div class="title">TYGODNIOWY ROZKŁAD ZAJĘĆ</div><div class="yr">Rok szkolny 2026 / 2027</div>'
+    + "<table><tr><th class=\"hr\">GODZ.</th>";
+  d.classes.forEach(function(c){ body += "<th>" + esc(d.classCodes[c.id]) + "</th>"; });
+  body += '<th class="sw">ŚWIETLICA<br>SZKOLNA</th>';
+  d.teachers.forEach(function(t){ body += "<th class=\"sw\">" + esc(d.firstIni(t) + d.surname(t)) + "</th>"; });
+  body += "</tr>";
+  DAYS.forEach(function(dn, di){
+    body += '<tr><th class="day" colspan="' + nCols + '">' + dn.toUpperCase() + "</th></tr>";
+    for (var h = 0; h < NH; h++){
+      var sl = di * NH + h;
+      body += '<tr><td class="hr">' + (h + 1) + ". " + hhmm(lt[h]) + "</td>";
+      d.classes.forEach(function(c){
+        var cell = (d.bySlot[sl] || []).filter(function(L2){ return L2.classIds.indexOf(c.id) >= 0; });
+        if (!cell.length){ body += '<td class="empty">·</td>'; return; }
+        body += "<td>";
+        cell.forEach(function(L2, ix){ body += (ix ? '<span class="le"></span>' : "") + '<span class="le"><b>' + esc(abbr(L2.subject)) + "</b>" + (L2.teacherId && d.inits[L2.teacherId] ? " <i>" + esc(d.inits[L2.teacherId]) + "</i>" : "") + "</span>"; });
+        body += "</td>";
+      });
+      var sw = d.swText(sl);
+      body += (sw ? "<td>" + sw.split("\n").join("<br>") + "</td>" : '<td class="empty">·</td>');
+      d.teachers.forEach(function(t){
+        var tc = d.tCell(t.id, sl);
+        body += (tc ? "<td>" + esc(tc).replace(/\n/g, "<br>") + "</td>" : '<td class="empty">·</td>');
+      });
+      body += "</tr>";
+    }
+  });
+  body += "</table>";
+  return '<!DOCTYPE html><html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Plansza A1 — tygodniowy rozkład zajęć</title>' + css + "</head><body>"
+    + '<div class="bar"><button onclick="window.print()">🖨️ DRUKUJ / zapisz PDF</button><span>Plansza A1 w konwencji szkolnego szablonu: kolumny klas i nauczycieli, godziny w wierszach. Drukuj A1 poziomo (albo A2/A3 z „Dopasuj do strony”), marginesy Minimalne.</span></div>'
+    + '<div class="pl">' + body + "</div></body></html>";
+}
+function openA1Print(){
+  if (!S.classes.length){ flash("Najpierw dodaj oddziały w zakładce Dane.", "warn"); return; }
+  var w = window.open("", "_blank");
+  if (!w){ flash("Przeglądarka zablokowała otwieranie nowych kart — zezwól na wyskakujące okna i spróbuj ponownie.", "err"); return; }
+  w.document.write(planszaA1Html());
+  w.document.close();
+}
 function renderEks(){
   var h = '<div class="card"><div class="hd"><span>🖨️ Eksport planów</span><button class="btn" onclick="copyEks()">📋 Kopiuj</button></div><div class="bd">';
   h += '<div class="row">'
@@ -2836,6 +3095,8 @@ function renderEks(){
      + '<button class="btn2' + (eksMode === "csv" ? " on" : "") + '" onclick="eksModeSet(\'csv\')">CSV (Excel)</button>'
      + '<button class="btn2" onclick="openPlansze()">🖼️ Plansze A3/A2</button>'
      + '<button class="btn2" onclick="openZbiorcza()">🗓️ Zbiorcza (tydzień)</button>'
+     + '<button class="btn2" onclick="downloadA1()">📊 A1 — Excel</button>'
+     + '<button class="btn2" onclick="openA1Print()">🖼️ A1 — wydruk</button>'
      + '<button class="btn2" onclick="downloadDocx()">📄 Word (.docx)</button>'
      + "</div>";
   h += '<textarea id="eksText" class="inp ta big" readonly>' + esc(eksText()) + "</textarea>";
@@ -2843,6 +3104,7 @@ function renderEks(){
   h += '<p class="hint">🖼️ Plansze A3/A2: otwierają się w nowej karcie — po jednym wielkim planie na oddział, do wydruku na korytarz (duże litery, pełne nazwiska). Najlepiej drukować z komputera.</p>';
   h += '<p class="hint">📄 Word (.docx): pobiera plik z planami wg widoku powyżej (klasy albo nauczyciele; przy CSV — plany klas). Otworzysz i zedytujesz go w Wordzie; PDF zrobisz z plansz A3/A2 (drukuj → zapisz jako PDF).</p>';
   h += '<p class="hint">🗓️ Zbiorcza (tydzień): jedna plansza dla całej szkoły — godziny w wierszach, oddziały w kolumnach, dni w pasach; w komórce skrót przedmiotu i inicjały nauczyciela (przy dublu druga litera nazwiska). Najlepiej drukować z komputera.</p>';
+  h += '<p class="hint">📊 A1 — Excel i 🖼️ A1 — wydruk (v6.20): plansza w konwencji szkolnego szablonu A1 — kolumny oddziałów (szkolne kody: 1a, 2aA, 5z…), Świetlica i kolumny nauczycieli (w komórce kod klasy, którą wtedy prowadzą), godziny wierszami. Excel: plik .xlsx do dalszej edycji; wydruk: A1 poziomo. Ułożony plan wypełnia wszystko automatycznie.</p>';
   h += "</div></div>";
   return h;
 }
