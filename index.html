@@ -170,7 +170,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.13.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.14.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -329,7 +329,9 @@ function rulesOn(settings){ return (settings.rules || []).filter(function(r){ re
 function lastHourOf(settings, d){ for (var h = NH - 1; h >= 0; h--) if (!slotBlocked(settings, d * NH + h)) return h; return 0; }
 function ruleMatch(r, L){
   if (r.classId && L.classIds.indexOf(r.classId) < 0) return false;
+  if (r.teacher && L.teacherId !== r.teacher) return false;
   if (r.type === "subjNotNext") return true;
+  if (r.type === "tchDays" || r.type === "tchMaxDays" || r.type === "tchBlock") return !r.subject || subjMatch(L.subject, r.subject);
   return subjMatch(L.subject, r.subject);
 }
 function rulePairHit(r, A, B){ return (subjMatch(A.subject, r.subject) && subjMatch(B.subject, r.subject2)) || (subjMatch(A.subject, r.subject2) && subjMatch(B.subject, r.subject)); }
@@ -343,9 +345,12 @@ function ruleDesc(r){
   if (r.type === "subjMaxWeek") return "„" + r.subject + "” maks. " + (r.n || 1) + " lekcje tygodniowo w klasie (" + cn + ")";
   if (r.type === "subjDays") return "„" + r.subject + "” tylko w dni: " + ((r.days && r.days.length) ? r.days.slice().sort().map(function(x){ return ["Pn", "Wt", "Śr", "Cz", "Pt"][x] || "?"; }).join(", ") : "—") + " (" + cn + ")";
   if (r.type === "subjBlock") return "„" + r.subject + "” w blokach po " + (r.n || 2) + " lekcje pod rząd (" + cn + ")";
+  if (r.type === "tchDays") return "Nauczyciel " + tName(r.teacher) + " pracuje tylko w dni: " + ((r.days && r.days.length) ? r.days.slice().sort().map(function(x){ return ["Pn", "Wt", "Śr", "Cz", "Pt"][x] || "?"; }).join(", ") : "—");
+  if (r.type === "tchMaxDays") return "Nauczyciel " + tName(r.teacher) + ": " + (r.subject ? "„" + r.subject + "” w maks. " : "lekcje w maks. ") + (r.n || 2) + " dniach tygodniowo";
+  if (r.type === "tchBlock") return "Nauczyciel " + tName(r.teacher) + ": " + (r.subject ? "„" + r.subject + "” w blokach po " : "lekcje w blokach po ") + (r.n || 2) + " pod rząd";
   return "Reguła";
 }
-function ruleSlotOk(r, L, s, settings, daySame, neighborLessons, subjSlots){
+function ruleSlotOk(r, L, s, settings, daySame, neighborLessons, subjSlots, tSame, tSlots){
   var d = Math.floor(s / NH), h = s % NH;
   if (r.type === "subjHours") return h >= (r.a || 1) - 1 && h <= (r.b || NH) - 1;
   if (r.type === "subjNotLast") return h < lastHourOf(settings, d);
@@ -364,6 +369,29 @@ function ruleSlotOk(r, L, s, settings, daySame, neighborLessons, subjSlots){
     return tot + 1 <= (r.n || 1);
   }
   if (r.type === "subjDays") return (r.days || [0, 1, 2, 3, 4]).indexOf(d) >= 0;
+  if (r.type === "tchDays") return (r.days || [0, 1, 2, 3, 4]).indexOf(d) >= 0;
+  if (r.type === "tchMaxDays"){
+    var nnM = Math.max(1, Math.min(5, r.n || 2));
+    var usedM = 0, sameM = tSame ? tSame(d) : 0;
+    for (var dm = 0; dm < 5; dm++){ if (tSame && tSame(dm) > 0) usedM++; }
+    return usedM + (sameM > 0 ? 0 : 1) <= nnM;
+  }
+  if (r.type === "tchBlock"){
+    var bnT = Math.max(2, Math.min(4, r.n || 2));
+    var slT = tSlots ? tSlots() : [];
+    var loT = s, hiT = s;
+    while (slT.indexOf(loT - 1) >= 0 && Math.floor((loT - 1) / NH) === d) loT--;
+    while (slT.indexOf(hiT + 1) >= 0 && Math.floor((hiT + 1) / NH) === d) hiT++;
+    if (hiT - loT + 1 > bnT) return false;
+    if (hiT > loT) return true; /* domyka lub rozbudowuje blok */
+    for (var siT = 0; siT < slT.length; siT++){
+      var xT = slT[siT], xnT = Math.floor(xT / NH);
+      var leftT = slT.indexOf(xT - 1) >= 0 && Math.floor((xT - 1) / NH) === xnT;
+      var rightT = slT.indexOf(xT + 1) >= 0 && Math.floor((xT + 1) / NH) === xnT;
+      if (!leftT && !rightT) return false; /* istnieje solo — nowa lekcja musi domknąć blok */
+    }
+    return true;
+  }
   if (r.type === "subjBlock"){
     var bn = Math.max(2, Math.min(4, r.n || 2));
     var sl = subjSlots ? subjSlots() : [];
@@ -477,6 +505,9 @@ function softPenalty(ls, teachers, classes, settings, placement){
         } else if (r1.type === "subjDays"){
           var ds1 = r1.days || [0, 1, 2, 3, 4];
           if (ds1.indexOf(dr) < 0){ pen += (+r1.weight || 100); seenR[r1.id + "|" + L.id] = 1; }
+        } else if (r1.type === "tchDays"){
+          var ds1b = r1.days || [0, 1, 2, 3, 4];
+          if (ds1b.indexOf(dr) < 0){ pen += (+r1.weight || 100); seenR[r1.id + "|" + L.id] = 1; }
         } else if (r1.type === "subjNotNext"){
           var snR = sr + 1;
           if (snR >= 5 * NH || Math.floor(snR / NH) !== dr) continue;
@@ -524,6 +555,30 @@ function softPenalty(ls, teachers, classes, settings, placement){
           pen += (+r7b.weight || 100) * (loose - allowed);
           seenR[r7b.id + "|" + kk2] = 1;
         }
+      }
+    });
+    softR.filter(function(r7c){ return r7c.type === "tchMaxDays"; }).forEach(function(r7c){
+      var nnC = Math.max(1, Math.min(5, r7c.n || 2));
+      var byT2 = {};
+      ls.forEach(function(L){ var s6 = placement[L.id]; if (s6 == null) return; if (!ruleMatch(r7c, L)) return; (byT2[L.teacherId] = byT2[L.teacherId] || {})[Math.floor(s6 / NH)] = 1; });
+      for (var tk3 in byT2){
+        var usedD = Object.keys(byT2[tk3]).length;
+        if (usedD > nnC){ pen += (+r7c.weight || 100) * (usedD - nnC); seenR[r7c.id + "|" + tk3] = 1; }
+      }
+    });
+    softR.filter(function(r7d){ return r7d.type === "tchBlock"; }).forEach(function(r7d){
+      var bnC2 = Math.max(2, Math.min(4, r7d.n || 2));
+      var byT4 = {};
+      ls.forEach(function(L){ if (!ruleMatch(r7d, L)) return; (byT4[L.teacherId] = byT4[L.teacherId] || []).push(L); });
+      for (var tk4 in byT4){
+        var slotsC2 = byT4[tk4].map(function(L){ return placement[L.id]; }).filter(function(sv){ return sv != null; }).sort(function(a2, b2){ return a2 - b2; });
+        if (slotsC2.length < 2) continue;
+        var allowedC2 = slotsC2.length % bnC2, looseC2 = 0, runC2 = 1;
+        for (var qC2 = 1; qC2 <= slotsC2.length; qC2++){
+          if (qC2 === slotsC2.length || slotsC2[qC2] - slotsC2[qC2 - 1] !== 1 || Math.floor(slotsC2[qC2] / NH) !== Math.floor(slotsC2[qC2 - 1] / NH)){ looseC2 += runC2 % bnC2; runC2 = 1; }
+          else runC2++;
+        }
+        if (looseC2 > allowedC2){ pen += (+r7d.weight || 100) * (looseC2 - allowedC2); seenR[r7d.id + "|" + tk4] = 1; }
       }
     });
     softR.forEach(function(r2){
@@ -617,6 +672,10 @@ function repairSoft(ls, teachers, classes, settings, placement){
         var outS = slotSD[L.classIds[0] + "|" + L.subject + "|" + (L.group || "")] || [], outF = outS.slice(), ixF = outF.indexOf(sOldR);
         if (ixF >= 0) outF.splice(ixF, 1); /* przenoszona lekcja nie może sama sobie blokować nowego slotu */
         return outF;
+      }, function(dT){
+        var cT = 0; ls.forEach(function(X){ if (X.teacherId !== L.teacherId || X.id === L.id) return; var sX = placement[X.id]; if (sX == null || Math.floor(sX / NH) !== dT) return; if (rr2.subject && !subjMatch(X.subject, rr2.subject)) return; cT++; }); return cT;
+      }, function(){
+        var oT = []; ls.forEach(function(X){ if (X.teacherId !== L.teacherId || X.id === L.id) return; if (rr2.subject && !subjMatch(X.subject, rr2.subject)) return; var sX = placement[X.id]; if (sX != null && oT.indexOf(sX) < 0) oT.push(sX); }); return oT;
       })) return false;
     }
     var gdR2 = settings.classMaxGapsPerDay == null ? 1 : settings.classMaxGapsPerDay;
@@ -829,7 +888,11 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
         var out = [];
         for (var rc = 0; rc < L.classIds.length; rc++){ var v = busyC[L.classIds[rc]] && busyC[L.classIds[rc]][sn]; if (v) out = out.concat(v); }
         return out;
-      }, function(){ return subjSlot[L.classIds[0] + "|" + L.subject + "|" + (L.group || "")] || []; })) return false;
+      }, function(){ return subjSlot[L.classIds[0] + "|" + L.subject + "|" + (L.group || "")] || []; }, function(dT){
+        var cT = 0; ls.forEach(function(X){ if (X.teacherId !== L.teacherId || X.id === L.id) return; var sX = placement[X.id]; if (sX == null || Math.floor(sX / NH) !== dT) return; if (rr.subject && !subjMatch(X.subject, rr.subject)) return; cT++; }); return cT;
+      }, function(){
+        var oT = []; ls.forEach(function(X){ if (X.teacherId !== L.teacherId || X.id === L.id) return; if (rr.subject && !subjMatch(X.subject, rr.subject)) return; var sX = placement[X.id]; if (sX != null && oT.indexOf(sX) < 0) oT.push(sX); }); return oT;
+      })) return false;
     }
     var gdF = settings.classMaxGapsPerDay == null ? 1 : settings.classMaxGapsPerDay;
     for (var cgF = 0; cgF < L.classIds.length; cgF++){
@@ -1078,6 +1141,9 @@ function findViolations(ls, teachers, classes, placement, settings){
         } else if (r5.type === "subjDays"){
           var ds5 = r5.days || [0, 1, 2, 3, 4];
           if (ds5.indexOf(dv) < 0) errs.push("Reguła własna: „" + r5.subject + "” nie może być w " + DAYS[dv] + " — a klasa " + cNm(L.classIds[0]) + " ma ją wtedy (lekcja " + (hv + 1) + ")");
+        } else if (r5.type === "tchDays"){
+          var ds5b = r5.days || [0, 1, 2, 3, 4];
+          if (ds5b.indexOf(dv) < 0) errs.push("Reguła własna: nauczyciel " + tName(r5.teacher) + " nie pracuje w " + DAYS[dv] + " — a ma tam lekcję (" + cNm(L.classIds[0]) + ", lekcja " + (hv + 1) + ")");
         } else if (r5.type === "subjNotNext"){
           var snv = sv + 1;
           if (snv >= 5 * NH || Math.floor(snv / NH) !== dv || seenV[r5.id + "|" + L.classIds[0] + "|" + sv]) continue;
@@ -1130,6 +1196,31 @@ function findViolations(ls, teachers, classes, placement, settings){
         }
         if (loose9 > allowed9)
           errs.push("Reguła własna: „" + r9.subject + "” w blokach po " + bn9 + " pod rząd — a klasa " + cNm(kk8.split("|")[0]) + " ma " + loose9 + (loose9 === 1 ? " lekcję" : " lekcje") + " luzem (dozwolonych: " + allowed9 + ")");
+      }
+    });
+    hrs.filter(function(r10){ return r10.type === "tchMaxDays"; }).forEach(function(r10){
+      var nn10 = Math.max(1, Math.min(5, r10.n || 2));
+      var byT10 = {};
+      ls.forEach(function(L){ var s10 = placement[L.id]; if (s10 == null) return; if (!ruleMatch(r10, L)) return; var dT10 = (byT10[L.teacherId] = byT10[L.teacherId] || {}); dT10[Math.floor(s10 / NH)] = (dT10[Math.floor(s10 / NH)] || 0) + 1; });
+      for (var tk10 in byT10){
+        var days10 = Object.keys(byT10[tk10]).length;
+        if (days10 > nn10) errs.push("Reguła własna: nauczyciel " + tName(r10.teacher) + (r10.subject ? " ma „" + r10.subject + "”" : " ma lekcje") + " w " + days10 + " dniach tygodnia (maks. " + nn10 + ")");
+      }
+    });
+    hrs.filter(function(r11){ return r11.type === "tchBlock"; }).forEach(function(r11){
+      var bn11 = Math.max(2, Math.min(4, r11.n || 2));
+      var byT11 = {};
+      ls.forEach(function(L){ if (!ruleMatch(r11, L)) return; (byT11[L.teacherId] = byT11[L.teacherId] || []).push(L); });
+      for (var tk11 in byT11){
+        var slots11 = byT11[tk11].map(function(L){ return placement[L.id]; }).filter(function(sv11){ return sv11 != null; }).sort(function(a11, b11){ return a11 - b11; });
+        if (slots11.length < 2) continue;
+        var allowed11 = slots11.length % bn11, loose11 = 0, run11 = 1;
+        for (var q11 = 1; q11 <= slots11.length; q11++){
+          if (q11 === slots11.length || slots11[q11] - slots11[q11 - 1] !== 1 || Math.floor(slots11[q11] / NH) !== Math.floor(slots11[q11 - 1] / NH)){ loose11 += run11 % bn11; run11 = 1; }
+          else run11++;
+        }
+        if (loose11 > allowed11)
+          errs.push("Reguła własna: nauczyciel " + tName(r11.teacher) + " — " + (r11.subject ? "„" + r11.subject + "”" : "lekcje") + " luzem: " + loose11 + (loose11 === 1 ? " lekcja" : " lekcji") + " (dozwolonych: " + allowed11 + ")");
       }
     });
   }
@@ -1935,12 +2026,12 @@ function toggC(s){
   save(); render();
 }
 var ruleTyp = "subjHours", ruleDraft = null, ruleEditId = null;
-function ruleDraftInit(){ ruleDraft = { kl: "", sub: "", sub2: "", a: 1, b: NH, n: 1, w: 100, hard: "hard", days: [0, 1, 2, 3, 4] }; }
+function ruleDraftInit(){ ruleDraft = { kl: "", sub: "", sub2: "", tch: "", a: 1, b: NH, n: 1, w: 100, hard: "hard", days: [0, 1, 2, 3, 4] }; }
 function ruleTypSet(v){
   if (!ruleDraft) ruleDraftInit();
-  ["kl", "sub", "sub2", "a", "b", "n", "w", "hard"].forEach(function(k){ var e = document.getElementById("r_" + k); if (e) ruleDraft[k] = e.value; });
+  ["kl", "sub", "sub2", "tch", "a", "b", "n", "w", "hard"].forEach(function(k){ var e = document.getElementById("r_" + k); if (e) ruleDraft[k] = e.value; });
   ruleTyp = v;
-  if ((v === "subjMinDays" || v === "subjBlock") && (!ruleDraft.n || parseInt(ruleDraft.n) < 2)) ruleDraft.n = 2;
+  if ((v === "subjMinDays" || v === "subjBlock" || v === "tchBlock" || v === "tchMaxDays") && (!ruleDraft.n || parseInt(ruleDraft.n) < 2)) ruleDraft.n = 2;
   render();
 }
 function ruleDS(k){
@@ -1952,8 +2043,12 @@ function ruleDS(k){
 function ruleSave(){
   if (!ruleDraft) ruleDraftInit();
   var d = ruleDraft;
+  var isTch = ruleTyp === "tchDays" || ruleTyp === "tchMaxDays" || ruleTyp === "tchBlock";
+  var tchE = document.getElementById("r_tch"), tch = isTch ? (tchE ? tchE.value : "") : "";
+  if (isTch && !tch){ flash("Wybierz nauczyciela reguły (najpierw dodaj zajęcia w zakładce Dane).", "warn"); return; }
   var subE = document.getElementById("r_sub"), sub = subE ? subE.value : "";
-  if (!sub){ flash("Wybierz przedmiot reguły (najpierw dodaj zajęcia w zakładce Dane).", "warn"); return; }
+  if (ruleTyp === "tchDays") sub = "";
+  else if (!isTch && !sub){ flash("Wybierz przedmiot reguły (najpierw dodaj zajęcia w zakładce Dane).", "warn"); return; }
   var sub2E = document.getElementById("r_sub2"), sub2 = ruleTyp === "subjNotNext" && sub2E ? sub2E.value : "";
   if (ruleTyp === "subjNotNext" && (!sub2 || subjMatch(sub, sub2))){ flash("Wybierz dwa różne przedmioty w regule „nie obok siebie”.", "warn"); return; }
   var aE = document.getElementById("r_a"), bE = document.getElementById("r_b"), nE = document.getElementById("r_n");
@@ -1961,12 +2056,13 @@ function ruleSave(){
   var b = Math.max(1, Math.min(NH, parseInt(bE ? bE.value : NH) || NH));
   if (ruleTyp === "subjHours" && a > b){ flash("Lekcja „od” nie może być późniejsza niż „do”.", "warn"); return; }
   var nRaw = Math.max(1, Math.min(40, parseInt(nE ? nE.value : 1) || 1));
-  if (ruleTyp === "subjMinDays" || ruleTyp === "subjBlock") nRaw = Math.max(2, Math.min(4, nRaw < 2 ? 2 : nRaw));
-  var daysD = ((ruleTyp === "subjDays" && ruleDraft && ruleDraft.days) ? ruleDraft.days : (ruleDraft && ruleDraft.days) || []).slice().sort();
-  if (ruleTyp === "subjDays" && !daysD.length){ flash("Zaznacz choć jeden dzień tygodnia (Pn–Pt).", "warn"); return; }
+  if (ruleTyp === "subjMinDays" || ruleTyp === "subjBlock" || ruleTyp === "tchBlock") nRaw = Math.max(2, Math.min(4, nRaw < 2 ? 2 : nRaw));
+  if (ruleTyp === "tchMaxDays") nRaw = Math.max(1, Math.min(5, nRaw));
+  var daysD = ((ruleTyp === "subjDays" || ruleTyp === "tchDays") && ruleDraft && ruleDraft.days) ? ruleDraft.days.slice().sort() : (ruleDraft && ruleDraft.days) || [];
+  if ((ruleTyp === "subjDays" || ruleTyp === "tchDays") && !daysD.length){ flash("Zaznacz choć jeden dzień tygodnia (Pn–Pt).", "warn"); return; }
   var r = {
     id: ruleEditId || ("r" + Date.now()),
-    type: ruleTyp, classId: d.kl || "", subject: sub, subject2: sub2,
+    type: ruleTyp, classId: isTch ? "" : (d.kl || ""), teacher: tch, subject: sub, subject2: sub2,
     a: a, b: b, n: nRaw, days: daysD,
     hard: d.hard !== "soft", weight: Math.max(10, parseInt(d.w) || 100), on: true
   };
@@ -1982,7 +2078,7 @@ function ruleSave(){
 }
 function ruleToggle(id){ (S.settings.rules || []).forEach(function(r){ if (r.id === id) r.on = r.on === false; }); save(); render(); }
 function ruleDel(id){ S.settings.rules = (S.settings.rules || []).filter(function(x){ return x.id !== id; }); if (ruleEditId === id) ruleEditId = null; save(); render(); }
-function ruleEdit(id){ (S.settings.rules || []).forEach(function(r){ if (r.id !== id) return; ruleEditId = id; ruleTyp = r.type; ruleDraft = { kl: r.classId, sub: r.subject, sub2: r.subject2, a: r.a, b: r.b, n: r.n, w: r.weight, hard: r.hard ? "hard" : "soft", days: (r.days && r.days.length ? r.days : [0, 1, 2, 3, 4]).slice() }; }); render(); }
+function ruleEdit(id){ (S.settings.rules || []).forEach(function(r){ if (r.id !== id) return; ruleEditId = id; ruleTyp = r.type; ruleDraft = { kl: r.classId, sub: r.subject, sub2: r.subject2, tch: r.teacher || "", a: r.a, b: r.b, n: r.n, w: r.weight, hard: r.hard ? "hard" : "soft", days: (r.days && r.days.length ? r.days : [0, 1, 2, 3, 4]).slice() }; }); render(); }
 function ruleCancel(){ ruleEditId = null; ruleDraftInit(); ruleTyp = "subjHours"; render(); }
 function ruleDayTog(dd){
   if (!ruleDraft) ruleDraftInit();
@@ -2172,6 +2268,7 @@ function renderOgr(){
       + '<button class="btn2" onclick="ruleDel(\'' + r.id + '\')">🗑️</button></div>';
   });
   if (!ruleDraft) ruleDraftInit();
+  var isTchUI = ruleTyp === "tchDays" || ruleTyp === "tchMaxDays" || ruleTyp === "tchBlock";
   h += '<div class="row" style="margin-top:8px"><select id="r_typ" class="inp" style="flex:1" onchange="ruleTypSet(this.value)">'
     + '<option value="subjHours"' + (ruleTyp === "subjHours" ? " selected" : "") + '>Przedmiot tylko na lekcjach od–do</option>'
     + '<option value="subjNotLast"' + (ruleTyp === "subjNotLast" ? " selected" : "") + '>Przedmiot nie na ostatniej lekcji dnia</option>'
@@ -2181,11 +2278,21 @@ function renderOgr(){
     + '<option value="subjMaxWeek"' + (ruleTyp === "subjMaxWeek" ? " selected" : "") + '>Przedmiot maks. N lekcji tygodniowo w klasie</option>'
     + '<option value="subjDays"' + (ruleTyp === "subjDays" ? " selected" : "") + '>Przedmiot tylko w wybrane dni tygodnia</option>'
     + '<option value="subjBlock"' + (ruleTyp === "subjBlock" ? " selected" : "") + '>Przedmiot w blokach po N lekcji pod rząd (np. 2 WF obok siebie)</option>'
+    + '<option value="tchDays"' + (ruleTyp === "tchDays" ? " selected" : "") + '>Nauczyciel pracuje tylko w wybrane dni tygodnia</option>'
+    + '<option value="tchMaxDays"' + (ruleTyp === "tchMaxDays" ? " selected" : "") + '>Nauczyciel: przedmiot maks. N dni w tygodniu (skupienie przyjazdów)</option>'
+    + '<option value="tchBlock"' + (ruleTyp === "tchBlock" ? " selected" : "") + '>Nauczyciel: lekcje przedmiotu w blokach po N pod rząd</option>'
     + "</select></div>";
+  if (isTchUI)
+    h += '<div class="row"><span class="lbl">Nauczyciel:</span><select id="r_tch" class="inp" onchange="ruleDS(\'tch\')">'
+      + (S.teachers.length ? "" : '<option value="">— najpierw dodaj nauczycieli —</option>')
+      + S.teachers.map(function(t){ return '<option value="' + t.id + '"' + (ruleDraft.tch === t.id ? " selected" : "") + ">" + esc(t.name) + "</option>"; }).join("")
+      + "</select></div>";
   var subsR = [], seenR2 = {};
   S.activities.forEach(function(a){ var k2 = normName(a.subject); if (!seenR2[k2]){ seenR2[k2] = 1; subsR.push(a.subject); } });
-  h += '<div class="row"><span class="lbl">Przedmiot:</span><select id="r_sub" class="inp" onchange="ruleDS(\'sub\')">'
+  if (!isTchUI || ruleTyp === "tchMaxDays" || ruleTyp === "tchBlock")
+    h += '<div class="row"><span class="lbl">' + (isTchUI ? "Przedmiot (opcjonalnie):" : "Przedmiot:") + '</span><select id="r_sub" class="inp" onchange="ruleDS(\'sub\')">'
     + (subsR.length ? "" : '<option value="">— najpierw dodaj zajęcia —</option>')
+    + (isTchUI ? '<option value="">— wszystkie przedmioty —</option>' : "")
     + subsR.map(function(x){ return '<option' + (ruleDraft.sub === x ? " selected" : "") + ">" + esc(x) + "</option>"; }).join("")
     + "</select>";
   if (ruleTyp === "subjNotNext")
@@ -2203,20 +2310,25 @@ function renderOgr(){
     h += '<div class="row"><span class="lbl">maks. tygodniowo:</span><input id="r_n" class="inp" style="width:64px" type="number" min="1" max="40" value="' + esc(ruleDraft.n) + '"></div>';
   if (ruleTyp === "subjBlock")
     h += '<div class="row"><span class="lbl">w blokach po:</span><input id="r_n" class="inp" style="width:64px" type="number" min="2" max="4" value="' + esc(ruleDraft.n) + '"><span class="hint" style="margin:0">np. 2 = dwie lekcje obok siebie; liczba godzin przedmiotu powinna się dzielić przez rozmiar bloku (2h WF → blok po 2)</span></div>';
-  if (ruleTyp === "subjDays"){
+  if (ruleTyp === "tchMaxDays")
+    h += '<div class="row"><span class="lbl">maks. dni w tygodniu:</span><input id="r_n" class="inp" style="width:64px" type="number" min="1" max="5" value="' + esc(ruleDraft.n) + '"><span class="hint" style="margin:0">np. 2 = wszystkie te lekcje skupione w 2 dniach — rzadsze przyjazdy do szkoły</span></div>';
+  if (ruleTyp === "tchBlock")
+    h += '<div class="row"><span class="lbl">w blokach po:</span><input id="r_n" class="inp" style="width:64px" type="number" min="2" max="4" value="' + esc(ruleDraft.n) + '"><span class="hint" style="margin:0">lekcje tego nauczyciela (z tego przedmiotu) obok siebie — zwarty dzień pracy</span></div>';
+  if (ruleTyp === "subjDays" || ruleTyp === "tchDays"){
     var dn = ["Pn", "Wt", "Śr", "Cz", "Pt"];
     h += '<div class="row"><span class="lbl">Dni:</span>' + dn.map(function(x, ix2){
       var on = (ruleDraft.days || []).indexOf(ix2) >= 0;
       return '<button class="btn2' + (on ? " on" : "") + '" style="margin:0 2px" onclick="ruleDayTog(' + ix2 + ')">' + x + '</button>';
-    }).join("") + '<span class="hint" style="margin:0">podświetlone dni = przedmiot wtedy może być</span></div>';
+    }).join("") + '<span class="hint" style="margin:0">' + (ruleTyp === "tchDays" ? "podświetlone dni = nauczyciel wtedy pracuje" : "podświetlone dni = przedmiot wtedy może być") + "</span></div>";
   }
-  h += '<div class="row"><span class="lbl">Oddział:</span><select id="r_kl" class="inp" onchange="ruleDS(\'kl\')"><option value="">wszystkie oddziały</option>'
+  if (!isTchUI)
+    h += '<div class="row"><span class="lbl">Oddział:</span><select id="r_kl" class="inp" onchange="ruleDS(\'kl\')"><option value="">wszystkie oddziały</option>'
     + S.classes.map(function(c){ return '<option value="' + c.id + '"' + (ruleDraft.kl === c.id ? " selected" : "") + ">" + esc(c.name) + "</option>"; }).join("")
     + "</select></div>";
   h += '<div class="row"><select id="r_hard" class="inp" onchange="ruleDS(\'hard\')"><option value="hard"' + (ruleDraft.hard !== "soft" ? " selected" : "") + '>🔒 Twarda — zawsze</option><option value="soft"' + (ruleDraft.hard === "soft" ? " selected" : "") + '>🪶 Miękka — kara</option></select>'
     + '<span class="lbl">waga:</span><input id="r_w" class="inp" style="width:64px" type="number" min="10" value="' + esc(ruleDraft.w) + '"' + (ruleDraft.hard === "soft" ? "" : " disabled") + "></div>";
   h += '<div class="row"><button class="btn" onclick="ruleSave()">' + (ruleEditId ? "💾 Zapisz zmiany" : "➕ Dodaj regułę") + "</button>" + (ruleEditId ? '<button class="btn2" onclick="ruleCancel()">Anuluj</button>' : "") + "</div>";
-  h += '<p class="hint">Przykłady: „Matematyka” tylko lekcje 1–4 · „Wych. fizyczne” nigdy ostatnie · „Rewalidacja” maks. 2 dziennie · „W-F” nie obok „Świetlicy” · „Język polski” min. 2 dni odstępu · „Plastyka” tylko Pn i Śr · „Muzyka” maks. 2 tygodniowo · „W-F” w blokach po 2 (2× obok siebie). Reguły działają przy „🪄 Wygeneruj automatycznie” i w „✅ Sprawdź zasady”.</p>';
+  h += '<p class="hint">Przykłady: „Matematyka” tylko lekcje 1–4 · „Wych. fizyczne” nigdy ostatnie · „Rewalidacja” maks. 2 dziennie · „W-F” nie obok „Świetlicy” · „Język polski” min. 2 dni odstępu · „Plastyka” tylko Pn i Śr · „Muzyka” maks. 2 tygodniowo · „W-F” w blokach po 2 (2× obok siebie) · nauczyciel pracuje tylko Pn–Śr · nauczyciel ma „W-F” w maks. 2 dniach tygodnia · rewalidacje nauczyciela w blokach po 2 pod rząd. Reguły działają przy „🪄 Wygeneruj automatycznie” i w „✅ Sprawdź zasady”.</p>';
   h += "</div></div>";
   h += '<div class="card"><div class="hd">🕐 Godziny lekcyjne</div><div class="bd"><div class="ltcnt">';
   var lt2 = lessonTimes();
