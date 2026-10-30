@@ -169,7 +169,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.18.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.19.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -204,6 +204,7 @@ function save(){ try{ localStorage.setItem(LS, JSON.stringify(S)); }catch(e){} }
 function normalize(p){
   if (!p.settings) p.settings = { teacherMaxPerDay: 7, classMaxPerDay: 7 };
   if (!p.settings.lessonTimes || p.settings.lessonTimes.length !== NH) p.settings.lessonTimes = defaultLessonTimes();
+  else if (JSON.stringify(p.settings.lessonTimes) === JSON.stringify(["8:00","8:55","9:55","10:55","11:55","12:55","13:55","14:55"])) p.settings.lessonTimes = defaultLessonTimes(); /* v6.19: migracja starego rytmu domyślnego; czasy wpisane ręcznie zostają */
   if (p.settings.friMax7 == null) p.settings.friMax7 = true;
   if (p.settings.blockedSlots == null) p.settings.blockedSlots = p.settings.friMax7 ? [4 * NH + (NH - 1)] : [];
   if (!Array.isArray(p.settings.blockedSlots)) p.settings.blockedSlots = [];
@@ -234,7 +235,7 @@ function loadState(){
   }catch(e){}
   return sps7State();
 }
-function defaultLessonTimes(){ var t = ["8:00"]; for (var i = 1; i < NH; i++) t.push((7 + i) + ":55"); return t; }
+function defaultLessonTimes(){ return ["8:00","8:55","9:50","10:45","11:50","12:55","13:55","14:55"].slice(0, NH); } /* v6.19: dzwonki wg szablonu A1 SPS7 */
 function minutesOf(t){ var m = /^(\d{1,2}):(\d{2})$/.exec((t || "").trim()); return m ? (+m[1]) * 60 + (+m[2]) : 0; }
 function fmtTime(min){ return Math.floor(min / 60) + ":" + String(min % 60).padStart(2, "0"); }
 function endOfLesson(t){ return fmtTime(minutesOf(t) + 45); }
