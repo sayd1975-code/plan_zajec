@@ -170,7 +170,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.14.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.15.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -260,6 +260,9 @@ function kindL(L){ return L && (L.kind === "rew" || L.kind === "swietl") ? L.kin
 function guessKind(subject){
   var s = String(subject || "").toLowerCase();
   if (/świetlic/.test(s)) return "swietl";
+  /* TIK/TUS: wg wytycznych NIE są zajęciami terapeutycznymi (R) — muszą być dyd,
+     mimo że "Trening umiejętności społecznych" zawiera słowo "trening". */
+  if (/\btus\b|umiejętności społec|umiejetnosci spolec/.test(s)) return "dyd";
   if (/rewalid|terapi|integracj|logoped|korekcyj|zkk|socjoterap|psycholog|pedagog|trening|specjalist|relaks|gimnastyk/.test(s)) return "rew";
   return "dyd";
 }
