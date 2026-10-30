@@ -169,7 +169,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.17.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.18.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -2739,6 +2739,94 @@ function downloadDocx(){
   setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 3000);
   flash("📄 Zapisano plik .docx — otworzysz go w Wordzie.", "ok");
 }
+/* ==================== v6.18: zbiorcza plansza tygodnia ==================== */
+function teacherInits(){
+  function words(n){ return String(n || "").replace(/\./g, " ").split(/\s+/).filter(Boolean); }
+  function surOf(w){ return w.length >= 2 ? w[w.length - 1] : (w[0] || ""); }
+  var map = {}, byBase = {};
+  S.teachers.forEach(function(t){
+    var w = words(t.name);
+    var b = w.length >= 2 ? w[0][0].toUpperCase() + w[w.length - 1][0].toUpperCase() : (w.length ? w[0].slice(0, 2).toUpperCase() : "??");
+    map[t.id] = b;
+    (byBase[b] = byBase[b] || []).push(t);
+  });
+  Object.keys(byBase).forEach(function(b){
+    var g = byBase[b];
+    if (g.length < 2) return;
+    var len = 2;
+    while (len <= 8){
+      var seen = {}, ok = true;
+      g.forEach(function(t){
+        var s = surOf(words(t.name)).slice(0, len).toUpperCase();
+        if (seen[s]) ok = false; else seen[s] = true;
+      });
+      if (ok) break;
+      len++;
+    }
+    g.forEach(function(t){ map[t.id] = words(t.name)[0][0].toUpperCase() + surOf(words(t.name)).slice(0, len); });
+  });
+  return map;
+}
+function planszaZbiorczaHtml(){
+  var ls = lessons(), placement = S.placement, bySlot = lessonsBySlot(ls, placement);
+  var lt = lessonTimes(), inits = teacherInits();
+  var tints = ["#fef3c7", "#e0f2fe", "#d1fae5", "#ede9fe", "#ffe4e6", "#ecfccb", "#ffedd5", "#cffafe", "#fae8ff", "#ccfbf1"];
+  function hhmm(t){ return t.replace(/^(\d):/, "0$1:") + "-" + endOfLesson(t).replace(/^(\d):/, "0$1:"); }
+  var nCols = S.classes.length + 1;
+  var css = "<style>"
+    + "@page { size: A2 landscape; margin: 8mm; }"
+    + "* { box-sizing: border-box; margin: 0; padding: 0; }"
+    + "body { font-family: Arial, 'Segoe UI', sans-serif; background: #f2f4f7; }"
+    + ".bar { position: sticky; top: 0; z-index: 9; background: #1f2d3d; color: #fff; padding: 4mm 8mm; display: flex; gap: 6mm; align-items: center; flex-wrap: wrap; }"
+    + ".bar button { font-size: 5mm; padding: 2mm 6mm; border: 0; border-radius: 2mm; background: #4a90d9; color: #fff; cursor: pointer; }"
+    + ".bar .tip { font-size: 3.6mm; opacity: .85; }"
+    + "@media print { .bar { display: none; } body { background: #fff; } }"
+    + ".pl { width: 578mm; padding: 4mm; background: #fff; margin: 8mm auto; }"
+    + ".title { text-align: center; font-size: 14mm; font-weight: bold; letter-spacing: 2.5mm; }"
+    + ".sub { text-align: center; font-size: 5mm; color: #333; margin: 1.5mm 0 5mm; }"
+    + "table { width: 100%; border-collapse: collapse; table-layout: fixed; }"
+    + "th, td { border: 0.35mm solid #444; font-size: 4.8mm; padding: 1.5mm 0.6mm; text-align: center; vertical-align: middle; word-wrap: break-word; }"
+    + "th { font-size: 5.8mm; background: #e8edf3; }"
+    + "th.day { background: #1f2d3d; color: #fff; font-size: 6.2mm; letter-spacing: 1.5mm; }"
+    + "th.hr, td.hr { width: 36mm; font-size: 4.6mm; background: #f1f5f9; white-space: nowrap; font-weight: bold; }"
+    + "td.empty { color: #ccc; }"
+    + "td i { font-style: normal; font-size: 4mm; font-weight: bold; }"
+    + "td .le { display: block; margin: 0.3mm 0; }"
+    + "</style>";
+  var body = '<div class="title">TYGODNIOWY ROZKŁAD ZAJĘĆ</div>'
+    + '<div class="sub">Szkoła Podstawowa nr 7 Specjalna w Katowicach · Rok szkolny 2026/2027</div>'
+    + '<table><tr><th class="hr">GODZ.</th>';
+  S.classes.forEach(function(c){ body += "<th>" + esc(c.name) + "</th>"; });
+  body += "</tr>";
+  DAYS.forEach(function(dn, di){
+    body += '<tr><th class="day" colspan="' + nCols + '">' + dn.toUpperCase() + "</th></tr>";
+    for (var h2 = 0; h2 < NH; h2++){
+      var sl = di * NH + h2;
+      body += '<tr><td class="hr">' + hhmm(lt[h2]) + "</td>";
+      S.classes.forEach(function(c){
+        var cell = (bySlot[sl] || []).filter(function(L){ return L.classIds.indexOf(c.id) >= 0; });
+        if (!cell.length){ body += '<td class="empty">·</td>'; return; }
+        body += '<td style="background:' + tints[colorIdx(cell[0].subject)] + '">';
+        cell.forEach(function(L, ix){
+          body += (ix ? '<span class="le"></span>' : "") + '<span class="le"><b>' + esc(abbr(L.subject)) + "</b>" + (inits[L.teacherId] ? " <i>" + esc(inits[L.teacherId]) + "</i>" : "") + "</span>";
+        });
+        body += "</td>";
+      });
+      body += "</tr>";
+    }
+  });
+  body += "</table>";
+  return '<!DOCTYPE html><html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Tygodniowy rozkład zajęć — cała szkoła</title>' + css + "</head><body>"
+    + '<div class="bar"><button onclick="window.print()">🖨️ DRUKUJ / zapisz PDF</button><span class="tip">Cała szkoła na jednej planszy: godziny w wierszach, oddziały w kolumnach. Drukuj A2 poziomo (albo A3 z „Dopasuj do strony”), marginesy Minimalne.</span></div>'
+    + '<div class="pl">' + body + "</div></body></html>";
+}
+function openZbiorcza(){
+  if (!S.classes.length){ flash("Najpierw dodaj oddziały w zakładce Dane.", "warn"); return; }
+  var w = window.open("", "_blank");
+  if (!w){ flash("Przeglądarka zablokowała otwieranie nowych kart — zezwól na wyskakujące okna i spróbuj ponownie.", "err"); return; }
+  w.document.write(planszaZbiorczaHtml());
+  w.document.close();
+}
 function renderEks(){
   var h = '<div class="card"><div class="hd"><span>🖨️ Eksport planów</span><button class="btn" onclick="copyEks()">📋 Kopiuj</button></div><div class="bd">';
   h += '<div class="row">'
@@ -2746,12 +2834,14 @@ function renderEks(){
      + '<button class="btn2' + (eksMode === "nauczyciele" ? " on" : "") + '" onclick="eksModeSet(\'nauczyciele\')">Plany nauczycieli</button>'
      + '<button class="btn2' + (eksMode === "csv" ? " on" : "") + '" onclick="eksModeSet(\'csv\')">CSV (Excel)</button>'
      + '<button class="btn2" onclick="openPlansze()">🖼️ Plansze A3/A2</button>'
+     + '<button class="btn2" onclick="openZbiorcza()">🗓️ Zbiorcza (tydzień)</button>'
      + '<button class="btn2" onclick="downloadDocx()">📄 Word (.docx)</button>'
      + "</div>";
   h += '<textarea id="eksText" class="inp ta big" readonly>' + esc(eksText()) + "</textarea>";
   h += '<p class="hint">' + (eksMode === "csv" ? "CSV ze średnikami — Excel otworzy w kolumnach (jeśli nie, użyj Dane → Tekst jako kolumny)." : "Tekst o stałej szerokości kolumn — wklejasz do Worda/Excela/maila. Skróty przedmiotów z pierwszych liter.") + "</p>";
   h += '<p class="hint">🖼️ Plansze A3/A2: otwierają się w nowej karcie — po jednym wielkim planie na oddział, do wydruku na korytarz (duże litery, pełne nazwiska). Najlepiej drukować z komputera.</p>';
   h += '<p class="hint">📄 Word (.docx): pobiera plik z planami wg widoku powyżej (klasy albo nauczyciele; przy CSV — plany klas). Otworzysz i zedytujesz go w Wordzie; PDF zrobisz z plansz A3/A2 (drukuj → zapisz jako PDF).</p>';
+  h += '<p class="hint">🗓️ Zbiorcza (tydzień): jedna plansza dla całej szkoły — godziny w wierszach, oddziały w kolumnach, dni w pasach; w komórce skrót przedmiotu i inicjały nauczyciela (przy dublu druga litera nazwiska). Najlepiej drukować z komputera.</p>';
   h += "</div></div>";
   return h;
 }
