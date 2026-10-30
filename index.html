@@ -169,7 +169,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.20.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.21.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -1747,6 +1747,11 @@ function renderDane(){
     h += '<div class="row" style="margin-top:8px"><button class="btn" onclick="doImport()">✅ Importuj ' + okN + ' wierszy</button><button class="btn2" onclick="cancelImport()">Anuluj</button></div></div>';
   }
   h += "</div></div>";
+  h += '<div class="card"><div class="hd">💾 Kopia zapasowa planu</div><div class="bd">';
+  h += '<p class="hint">Dane apki żyją tylko w pamięci tej przeglądarki — wyczyszczenie danych w telefonie/komputerze zabrałoby cały plan. Zapisuj kopię po większych zmianach i trzymaj plik w bezpiecznym miejscu (Dysk, pendrive, mail do siebie). Wczytanie kopii zastępuje bieżące dane — tym samym przeniesiesz plan między telefonem a komputerem.</p>';
+  h += '<div class="row"><button class="btn" onclick="backupPlan()">💾 Zapisz kopię (plik .json)</button>'
+     + '<input type="file" class="file" accept=".json,application/json" onchange="backupFileRead(this)" title="Wczytaj kopię planu z pliku"></div>';
+  h += '</div></div>';
   h += '<div class="row">'
      + '<button class="btn2" onclick="confirmClick(\'sps7\',loadSPS7)">' + (confirmKey === "sps7" ? "Na pewno? Zastąpi dane!" : "🏫 Wczytaj strukturę SPS nr 7") + "</button>"
      + '<button class="btn2" onclick="confirmClick(\'demo\',loadDemo)">' + (confirmKey === "demo" ? "Na pewno? Zastąpi dane!" : "🧪 Wczytaj przykład") + "</button>"
@@ -1763,6 +1768,43 @@ function confirmClick(key, fn){
 function loadSPS7(){ S = sps7State(); sel = null; importRows = null; importText = ""; save(); render(); flash("Wczytano strukturę SPS nr 7. Dodaj nauczycieli / wklej przydziały.", "ok"); }
 function loadDemo(){ S = normalize(demoState()); sel = null; importRows = null; importText = ""; save(); render(); flash("Wczytano przykładową szkołę.", "ok"); }
 function clearAll(){ var kUrl = (S && S.settings) ? (S.settings.assistantUrl || "") : "", kTok = (S && S.settings) ? (S.settings.chatToken || "") : ""; S = normalize({ teachers: [], classes: [], activities: [], placement: {}, settings: { teacherMaxPerDay: 7, classMaxPerDay: 7, lessonTimes: defaultLessonTimes(), assistantUrl: kUrl, chatToken: kTok } }); sel = null; importRows = null; importText = ""; save(); render(); flash("Wyczyszczono wszystko (adres asystenta zachowany).", "ok"); }
+/* ==================== v6.21: kopia zapasowa planu (plik .json) ==================== */
+function backupFileName(){ var d = new Date(); return "plan-zajec-kopia-" + d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0") + ".json"; }
+function backupPlan(){
+  try{
+    var blob = new Blob([JSON.stringify(S)], { type: "application/json" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = backupFileName();
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 3000);
+    flash("💾 Zapisano kopię zapasową (" + backupFileName() + ") — przechowaj plik w bezpiecznym miejscu.", "ok");
+  }catch(e){ flash("Nie udało się zapisać kopii: " + (e && e.message ? e.message : e), "err"); }
+}
+function applyBackupText(text){
+  var p = JSON.parse(String(text || ""));
+  if (!p || typeof p !== "object" || Array.isArray(p)) throw new Error("to nie jest kopia planu (oczekiwałem obiektu JSON)");
+  if (!Array.isArray(p.teachers) || !Array.isArray(p.classes) || !Array.isArray(p.activities) || !p.placement || typeof p.placement !== "object") throw new Error("brak teachers/classes/activities/placement — to nie wygląda na kopię planu");
+  S = normalize(p);
+  sel = null; importRows = null; importText = "";
+  save(); render();
+  return { t: S.teachers.length, c: S.classes.length, a: S.activities.length };
+}
+function backupFileRead(inp){
+  var f = inp.files && inp.files[0]; if (!f) return;
+  var fr = new FileReader();
+  fr.onload = function(){
+    try{
+      var st = applyBackupText(fr.result);
+      var lt = lessonTimes();
+      flash("📂 Wczytano kopię: " + st.t + " nauczycieli, " + st.c + " oddziałów, " + st.a + " przydziałów (zajęcia " + lt[0] + "–" + endOfLesson(lt[NH - 1]) + ").", "ok");
+    }catch(e2){ flash("Nie udało się wczytać kopii: " + (e2 && e2.message ? e2.message : e2), "err"); }
+  };
+  fr.onerror = function(){ flash("Nie udało się odczytać pliku.", "err"); };
+  fr.readAsText(f);
+  inp.value = "";
+}
 function addClass(){
   var v = document.getElementById("newClassName").value.trim();
   if (!v) return;
