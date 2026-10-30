@@ -170,7 +170,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.9.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.10.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -215,6 +215,12 @@ function normalize(p){
   if (p.settings.classMaxGaps == null) p.settings.classMaxGaps = 1;
   if (!Array.isArray(p.settings.rules)) p.settings.rules = [];
   if (!p.settings.assistantUrl) p.settings.assistantUrl = "";
+  if (!p.settings.chatToken) p.settings.chatToken = "";
+  if (p.settings.wTeacherGap == null) p.settings.wTeacherGap = 150;
+  if (p.settings.wClassGap == null) p.settings.wClassGap = 150;
+  if (p.settings.wSwMid == null) p.settings.wSwMid = 40;
+  if (p.settings.wAutBlock == null) p.settings.wAutBlock = 40;
+  if (p.settings.wPair == null) p.settings.wPair = 120;
   p.classes.forEach(function(c){ if (c.rew == null) c.rew = rewFromName(c.name); if (!Array.isArray(c.blocked)) c.blocked = []; });
   p.activities.forEach(function(a){ if (a.group == null) a.group = ""; if (a.withClassId == null) a.withClassId = ""; if (a.link == null) a.link = ""; });
   if (!p.placement) p.placement = {};
@@ -289,7 +295,8 @@ function sps7State(){
     placement: {},
     settings: {
       teacherMaxPerDay: 7, classMaxPerDay: 7, lessonTimes: defaultLessonTimes(),
-      friMax7: true, blockedSlots: [39], maxGaps: 2, gapExceptions: "", autBlocks: true, rules: [], assistantUrl: "",
+      friMax7: true, blockedSlots: [39], maxGaps: 2, gapExceptions: "", autBlocks: true, rules: [], assistantUrl: "", chatToken: "",
+      wTeacherGap: 150, wClassGap: 150, wSwMid: 40, wAutBlock: 40, wPair: 120,
       pairs: [{cls:"5a M",a:"polski",b:"matematyka"},{cls:"6a M",a:"polski",b:"matematyka"},{cls:"6b",a:"polski",b:"matematyka"},{cls:"7a",a:"polski",b:"matematyka"}]
     }
   };
@@ -379,6 +386,11 @@ function softPenalty(ls, teachers, classes, settings, placement){
   var names = {}; classes.forEach(function(c){ names[c.id] = c.name; });
   var tnames = {}; teachers.forEach(function(t){ tnames[t.id] = t.name; });
   var pen = 0, det = [];
+  var wTG = settings.wTeacherGap == null ? 150 : Math.max(0, +settings.wTeacherGap || 0);
+  var wCG = settings.wClassGap == null ? 150 : Math.max(0, +settings.wClassGap || 0);
+  var wSM = settings.wSwMid == null ? 40 : Math.max(0, +settings.wSwMid || 0);
+  var wAB = settings.wAutBlock == null ? 40 : Math.max(0, +settings.wAutBlock || 0);
+  var wPR = settings.wPair == null ? 120 : Math.max(0, +settings.wPair || 0);
   var mg = settings.maxGaps || 0;
   var tdays = {};
   ls.forEach(function(L){ var s = placement[L.id]; if (s == null) return;
@@ -386,7 +398,7 @@ function softPenalty(ls, teachers, classes, settings, placement){
   for (var tk in tdays){
     if (tk && mg > 0 && !isGapExc(tnames[tk], settings)){
       var g = 0; for (var d = 0; d < 5; d++) g += dayGaps(tdays[tk][d]);
-      if (g > mg){ pen += 150 * (g - mg); det.push(tnames[tk] + ": " + g + " okienek w tygodniu (limit " + mg + ")"); }
+      if (wTG > 0 && g > mg){ pen += wTG * (g - mg); det.push(tnames[tk] + ": " + g + " okienek w tygodniu (limit " + mg + ")"); }
     }
   }
   var cg = settings.classMaxGaps == null ? 1 : settings.classMaxGaps;
@@ -399,7 +411,7 @@ function softPenalty(ls, teachers, classes, settings, placement){
       }); });
     for (var ck in cdays){
       var gc = 0; for (var dc = 0; dc < 5; dc++) gc += dayGaps(cdays[ck][dc]);
-      if (gc > cg){ pen += 150 * (gc - cg); det.push("Klasa " + names[ck] + ": " + gc + " okienek w tygodniu (limit " + cg + ")"); }
+      if (wCG > 0 && gc > cg){ pen += wCG * (gc - cg); det.push("Klasa " + names[ck] + ": " + gc + " okienek w tygodniu (limit " + cg + ")"); }
     }
   }
   var softR = rulesOn(settings).filter(function(r){ return !r.hard; });
@@ -473,7 +485,7 @@ function softPenalty(ls, teachers, classes, settings, placement){
     });
   }
   var swMid = 0;
-  ls.forEach(function(L){ var s = placement[L.id]; if (s == null) return; if (kindL(L) !== "swietl") return; var hh = s % NH; if (hh >= 2 && hh <= 4){ pen += 40; swMid++; } });
+  ls.forEach(function(L){ var s = placement[L.id]; if (s == null) return; if (kindL(L) !== "swietl") return; var hh = s % NH; if (wSM > 0 && hh >= 2 && hh <= 4){ pen += wSM; swMid++; } });
   if (swMid) det.push("Świetlica/ŚAW: " + swMid + " lekcji na godzinach 3-5 (wytyczne wolą 1-2 albo 6-8)");
   if (settings.autBlocks){
     var cnt = {};
@@ -488,7 +500,7 @@ function softPenalty(ls, teachers, classes, settings, placement){
         var hs = per[ck + "|" + dd + "|" + bt] || [];
         if (hs.length >= 2){
           var g2 = dayGaps(hs);
-          if (g2 > 0){ pen += 40 * g2; det.push("Klasa " + names[ck] + ": godziny " + tnames[bt] + " w " + DAYS[dd].slice(0, 3) + " nie są w bloku (przerwy: " + g2 + ")"); }
+          if (wAB > 0 && g2 > 0){ pen += wAB * g2; det.push("Klasa " + names[ck] + ": godziny " + tnames[bt] + " w " + DAYS[dd].slice(0, 3) + " nie są w bloku (przerwy: " + g2 + ")"); }
         }
       }
     }
@@ -509,7 +521,7 @@ function softPenalty(ls, teachers, classes, settings, placement){
       var pa = null, pb = null;
       as.forEach(function(A){ if (placement[A.id] != null && !pa) pa = A; });
       bs.forEach(function(B){ if (placement[B.id] != null && !pb) pb = B; });
-      if (pa && pb){ pen += 120; det.push("Klasa " + names[cid] + ": para „" + p.a + " + " + p.b + "” nie jest ułożona obok siebie"); }
+        if (pa && pb && wPR > 0){ pen += wPR; det.push("Klasa " + names[cid] + ": para „" + p.a + " + " + p.b + "” nie jest ułożona obok siebie"); }
     }
   });
   return { pen: pen, det: det };
@@ -1718,7 +1730,7 @@ function chatSend(){
   var ls = buildLessons(S.activities), placed = 0;
   S.activities.forEach(function(a){ for (var i = 0; i < a.hours; i++) if (S.placement[a.id + "-" + i] != null) placed++; });
   var ctx = { klasy: S.classes.length, nauczyciele: S.teachers.length, zajecia: S.activities.length, lekcje: ls.length, ulozone: placed, nieulozone: ls.length - placed };
-  fetch(S.settings.assistantUrl, { method: "POST", headers: { "Content-Type": "text/plain" }, body: JSON.stringify({ messages: msgs, context: ctx }) })
+  fetch(S.settings.assistantUrl, { method: "POST", headers: { "Content-Type": "text/plain" }, body: JSON.stringify({ messages: msgs, context: ctx, token: (S.settings.chatToken || "") }) })
     .then(function(r2){ return r2.json(); })
     .then(function(d2){
       chatMsgs.push({ role: "assistant", text: (d2 && d2.reply) ? d2.reply : "⚠️ " + ((d2 && d2.error) || "asystent nie odpowiedział — sprawdź adres backendu") });
@@ -1727,6 +1739,8 @@ function chatSend(){
     .then(function(){ chatBusy = false; chatSave(); render(); });
 }
 function setAssistantUrl(v){ S.settings.assistantUrl = String(v || "").trim(); save(); flash("Adres asystenta zapisany."); }
+function setChatToken(v){ S.settings.chatToken = String(v || "").trim(); save(); flash("Token zapisany — będzie wysyłany z każdą wiadomością."); }
+function setPenW(k, v){ S.settings[k] = Math.max(0, Math.min(2000, parseInt(v) || 0)); save(); render(); }
 function toggU(s){
   var t = null; S.teachers.forEach(function(x){ if (x.id === ogrT) t = x; });
   if (!t) return;
@@ -1826,6 +1840,7 @@ function renderOgr(){
   h += '<div class="card"><div class="hd"><span>🤖 Asystent AI (czat)</span></div><div class="bd">';
   h += '<p class="hint">Przycisk 💬 w prawym dolnym rogu otwiera czat z asystentem — dopyta o apkę i podpowie co kliknąć. Asystent działa przez <b>Twój własny backend</b> (instrukcja: „Backend asystenta AI” na Dysku Google w folderze Plan zajęć) i zewnętrzny serwis AI (Mistral). ⚠️ Nie wpisuj w czacie nazwisk ani danych wrażliwych.</p>';
   h += '<div class="row"><span class="lbl">Adres asystenta:</span><input class="inp" style="flex:1" value="' + esc(S.settings.assistantUrl || "") + '" placeholder="https://script.google.com/macros/s/…/exec" onchange="setAssistantUrl(this.value)"></div>';
+  h += '<div class="row"><span class="lbl">Token (opcjonalny):</span><input class="inp" style="flex:1" value="' + esc(S.settings.chatToken || "") + '" placeholder="wypełnij tylko, jeśli w backendzie ustawiłeś CHAT_TOKEN" onchange="setChatToken(this.value)"></div>';
   h += '<p class="hint">Puste pole = czat prosi tylko o adres. Po wpisaniu adresu zapis jest automatyczny. Rozmowa zostaje tylko w tej przeglądarce.</p>';
   h += "</div></div>";
   h += '<div class="card"><div class="hd"><span>📐 Reguły własne (poziom FET)</span></div><div class="bd">';
@@ -1892,6 +1907,14 @@ function renderOgr(){
      + '<label class="lbl">Maks. lekcji nauczyciela dziennie:</label><input class="inp" type="number" style="width:70px" value="' + S.settings.teacherMaxPerDay + '" onchange="setLimit(\'teacherMaxPerDay\',this.value)">'
      + '<label class="lbl" style="margin-left:14px">Maks. lekcji klasy dziennie:</label><input class="inp" type="number" style="width:70px" value="' + S.settings.classMaxPerDay + '" onchange="setLimit(\'classMaxPerDay\',this.value)">'
      + '</div><p class="hint">Zmiana limitów obowiązuje przy kolejnym generowaniu i ruchach ręcznych.</p></div></div>';
+  h += '<div class="card"><div class="hd">⚖️ Wagi kar — co automat omija najmocniej</div><div class="bd">';
+  h += '<p class="hint">Im większa waga, tym mocniej „🪄 Wygeneruj automatycznie” omija dany problem. <b>0 = nie liczy się w ogóle</b> (wbudowaną zasadę można tak „wyłączyć”). Reguły własne (miękkie) mają swoje wagi w karcie 📐 powyżej.</p>';
+  h += '<div class="row"><span class="lbl" style="min-width:230px">Okienka nauczyciela (za każde ponad limit):</span><input class="inp" type="number" min="0" max="2000" style="width:70px" value="' + S.settings.wTeacherGap + '" onchange="setPenW(\'wTeacherGap\',this.value)"><span class="hint" style="margin:0">domyślnie 150</span></div>';
+  h += '<div class="row"><span class="lbl" style="min-width:230px">Okienka klasy (za każde ponad limit):</span><input class="inp" type="number" min="0" max="2000" style="width:70px" value="' + S.settings.wClassGap + '" onchange="setPenW(\'wClassGap\',this.value)"><span class="hint" style="margin:0">domyślnie 150</span></div>';
+  h += '<div class="row"><span class="lbl" style="min-width:230px">Świetlica/ŚAW na lekcjach 3–5 (za lekcję):</span><input class="inp" type="number" min="0" max="2000" style="width:70px" value="' + S.settings.wSwMid + '" onchange="setPenW(\'wSwMid\',this.value)"><span class="hint" style="margin:0">domyślnie 40</span></div>';
+  h += '<div class="row"><span class="lbl" style="min-width:230px">Rozbite bloki godzin wychowawcy w AUT (za przerwę):</span><input class="inp" type="number" min="0" max="2000" style="width:70px" value="' + S.settings.wAutBlock + '" onchange="setPenW(\'wAutBlock\',this.value)"><span class="hint" style="margin:0">domyślnie 40</span></div>';
+  h += '<div class="row"><span class="lbl" style="min-width:230px">Para przedmiotów nie ułożona obok siebie (za parę):</span><input class="inp" type="number" min="0" max="2000" style="width:70px" value="' + S.settings.wPair + '" onchange="setPenW(\'wPair\',this.value)"><span class="hint" style="margin:0">domyślnie 120</span></div>';
+  h += '</div></div>';
   h += '<div class="card"><div class="hd">🚻 Tory rewalidacji — ile zajęć równolegle w klasie</div><div class="bd">';
   h += '<p class="hint">Rewalidacje mogą się nakładać w jednej klasie, ale nie więcej niż liczba torów (1–6). Nowe oddziały dostają tory rozpoznane po nazwie wg wytycznych (jednotorowo: 3c AUT, 5 ZET, 7 AUT, 8 ZET; trzytorowo: 5a M, 6a M, 6b, 7a; pozostałe dwutorowo). Zajęcia dydaktyczne nie łączą się z niczym — chyba że dotyczą różnych grup (kolumna „grupa" w Dane).</p>';
   if (!S.classes.length) h += '<p class="hint">Brak oddziałów — dodaj je w zakładce Dane.</p>';
