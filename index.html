@@ -169,7 +169,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.16.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.17.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -2634,6 +2634,111 @@ function openPlansze(){
   w.document.write(planszeHtml());
   w.document.close();
 }
+/* ==================== v6.17: eksport Word (.docx) ==================== */
+function crc32(u8){
+  var crc = 0 ^ (-1);
+  for (var i = 0; i < u8.length; i++){
+    crc ^= u8[i];
+    for (var k = 0; k < 8; k++) crc = (crc >>> 1) ^ (0xEDB88320 & -(crc & 1));
+  }
+  return (crc ^ (-1)) >>> 0;
+}
+function zipWrite(entries){
+  function u16(a, v){ a.push(v & 255, (v >>> 8) & 255); }
+  function u32(a, v){ a.push(v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255); }
+  function bytesOf(s){
+    if (typeof s === "string"){
+      var bin = encodeURIComponent(s).replace(/%([0-9A-Fa-f]{2})/g, function(_, h){ return String.fromCharCode(parseInt(h, 16)); });
+      var a = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
+      return a;
+    }
+    return s;
+  }
+  var out = [], central = [];
+  entries.forEach(function(e){
+    var name = bytesOf(e.name), data = bytesOf(e.data);
+    var crc = crc32(data), start = out.length;
+    var h = [];
+    u32(h, 0x04034b50); u16(h, 20); u16(h, 0); u16(h, 0); u16(h, 0); u16(h, 0);
+    u32(h, crc); u32(h, data.length); u32(h, data.length); u16(h, name.length); u16(h, 0);
+    out = out.concat(h, Array.prototype.slice.call(name), Array.prototype.slice.call(data));
+    var c = [];
+    u32(c, 0x02014b50); u16(c, 20); u16(c, 20); u16(c, 0); u16(c, 0); u16(c, 0); u16(c, 0);
+    u32(c, crc); u32(c, data.length); u32(c, data.length);
+    u16(c, name.length); u16(c, 0); u16(c, 0); u16(c, 0); u16(c, 0); u32(c, 0); u32(c, start);
+    central = central.concat(c, Array.prototype.slice.call(name));
+  });
+  var cdStart = out.length;
+  out = out.concat(central);
+  var eocd = [];
+  u32(eocd, 0x06054b50); u16(eocd, 0); u16(eocd, 0); u16(eocd, entries.length); u16(eocd, entries.length);
+  u32(eocd, central.length); u32(eocd, cdStart); u16(eocd, 0);
+  out = out.concat(eocd);
+  var u8 = new Uint8Array(out.length);
+  for (var j = 0; j < out.length; j++) u8[j] = out[j];
+  return u8;
+}
+function docxPlans(){
+  var mode = (eksMode === "nauczyciele") ? "teacher" : "class";
+  var ls = lessons(), placement = S.placement, bySlot = lessonsBySlot(ls, placement);
+  var lt = lessonTimes();
+  var ids = mode === "class" ? S.classes.map(function(c){ return c.id; }) : S.teachers.map(function(t){ return t.id; });
+  var body = "";
+  ids.forEach(function(id, pi){
+    if (pi) body += '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
+    body += '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="40"/></w:rPr><w:t xml:space="preserve">PLAN LEKCJI</w:t></w:r></w:p>';
+    body += '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="28"/></w:rPr><w:t xml:space="preserve">' + esc(mode === "class" ? "Oddział: " + cName(id) : "Nauczyciel: " + tName(id)) + '</w:t></w:r></w:p>';
+    body += '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:color w:val="555555"/><w:sz w:val="20"/></w:rPr><w:t xml:space="preserve">Szkoła Podstawowa nr 7 Specjalna w Katowicach · 2026/2027</w:t></w:r></w:p>';
+    body += '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders>'
+      + ["top", "left", "bottom", "right", "insideH", "insideV"].map(function(b){ return '<w:' + b + ' w:val="single" w:sz="6" w:space="0" w:color="666666"/>'; }).join("")
+      + '</w:tblBorders></w:tblPr>';
+    body += "<w:tr>";
+    ["Godzina"].concat(DAYS).forEach(function(d){
+      body += '<w:tc><w:tcPr><w:shd w:val="clear" w:color="auto" w:fill="E8EDF3"/></w:tcPr><w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">' + esc(d) + '</w:t></w:r></w:p></w:tc>';
+    });
+    body += "</w:tr>";
+    for (var h2 = 0; h2 < NH; h2++){
+      body += "<w:tr>";
+      body += '<w:tc><w:p><w:r><w:t xml:space="preserve">' + esc(lt[h2] + "-" + endOfLesson(lt[h2])) + '</w:t></w:r></w:p></w:tc>';
+      for (var di = 0; di < 5; di++){
+        var sl = di * NH + h2;
+        var cell = (bySlot[sl] || []).filter(function(L){
+          return mode === "class" ? L.classIds.indexOf(id) >= 0 : L.teacherId === id;
+        });
+        body += "<w:tc><w:p>";
+        if (!cell.length) body += '<w:r><w:t xml:space="preserve">·</w:t></w:r>';
+        cell.forEach(function(L, ix){
+          if (ix) body += "</w:p><w:p>";
+          body += '<w:r><w:t xml:space="preserve">' + esc(L.subject) + '</w:t></w:r>';
+          body += '<w:r><w:br/></w:r><w:r><w:rPr><w:sz w:val="18"/><w:color w:val="555555"/></w:rPr><w:t xml:space="preserve">' + esc(mode === "class" ? tName(L.teacherId) : L.classIds.map(cName).join("+")) + '</w:t></w:r>';
+        });
+        body += "</w:p></w:tc>";
+      }
+      body += "</w:tr>";
+    }
+    body += "</w:tbl><w:p/>";
+  });
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>'
+    + body
+    + '<w:sectPr><w:pgSz w:w="16838" w:h="11906" w:orient="landscape"/><w:pgMar w:top="567" w:right="567" w:bottom="567" w:left="567" w:header="0" w:footer="0" w:gutter="0"/></w:sectPr></w:body></w:document>';
+}
+function downloadDocx(){
+  var parts = [
+    { name: "[Content_Types].xml", data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>' },
+    { name: "_rels/.rels", data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>' },
+    { name: "word/document.xml", data: docxPlans() }
+  ];
+  var u8 = zipWrite(parts);
+  var blob = new Blob([u8], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = (eksMode === "nauczyciele" ? "plany-nauczycieli" : "plany-klas") + ".docx";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 3000);
+  flash("📄 Zapisano plik .docx — otworzysz go w Wordzie.", "ok");
+}
 function renderEks(){
   var h = '<div class="card"><div class="hd"><span>🖨️ Eksport planów</span><button class="btn" onclick="copyEks()">📋 Kopiuj</button></div><div class="bd">';
   h += '<div class="row">'
@@ -2641,10 +2746,12 @@ function renderEks(){
      + '<button class="btn2' + (eksMode === "nauczyciele" ? " on" : "") + '" onclick="eksModeSet(\'nauczyciele\')">Plany nauczycieli</button>'
      + '<button class="btn2' + (eksMode === "csv" ? " on" : "") + '" onclick="eksModeSet(\'csv\')">CSV (Excel)</button>'
      + '<button class="btn2" onclick="openPlansze()">🖼️ Plansze A3/A2</button>'
+     + '<button class="btn2" onclick="downloadDocx()">📄 Word (.docx)</button>'
      + "</div>";
   h += '<textarea id="eksText" class="inp ta big" readonly>' + esc(eksText()) + "</textarea>";
   h += '<p class="hint">' + (eksMode === "csv" ? "CSV ze średnikami — Excel otworzy w kolumnach (jeśli nie, użyj Dane → Tekst jako kolumny)." : "Tekst o stałej szerokości kolumn — wklejasz do Worda/Excela/maila. Skróty przedmiotów z pierwszych liter.") + "</p>";
   h += '<p class="hint">🖼️ Plansze A3/A2: otwierają się w nowej karcie — po jednym wielkim planie na oddział, do wydruku na korytarz (duże litery, pełne nazwiska). Najlepiej drukować z komputera.</p>';
+  h += '<p class="hint">📄 Word (.docx): pobiera plik z planami wg widoku powyżej (klasy albo nauczyciele; przy CSV — plany klas). Otworzysz i zedytujesz go w Wordzie; PDF zrobisz z plansz A3/A2 (drukuj → zapisz jako PDF).</p>';
   h += "</div></div>";
   return h;
 }
