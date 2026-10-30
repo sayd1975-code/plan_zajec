@@ -170,7 +170,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.8.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.9.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -330,13 +330,30 @@ function ruleDesc(r){
   if (r.type === "subjNotLast") return "„" + r.subject + "” nie na ostatniej lekcji dnia (" + cn + ")";
   if (r.type === "subjMaxDay") return "„" + r.subject + "” maks. " + r.n + " lekcje dziennie w klasie (" + cn + ")";
   if (r.type === "subjNotNext") return "„" + r.subject + "” nie bezpośrednio obok „" + r.subject2 + "” (" + cn + ")";
+  if (r.type === "subjMinDays") return "„" + r.subject + "” min. " + (r.n || 2) + " dni odstępu w tygodniu (" + cn + ")";
+  if (r.type === "subjMaxWeek") return "„" + r.subject + "” maks. " + (r.n || 1) + " lekcje tygodniowo w klasie (" + cn + ")";
+  if (r.type === "subjDays") return "„" + r.subject + "” tylko w dni: " + ((r.days && r.days.length) ? r.days.slice().sort().map(function(x){ return ["Pn", "Wt", "Śr", "Cz", "Pt"][x] || "?"; }).join(", ") : "—") + " (" + cn + ")";
   return "Reguła";
 }
-function ruleSlotOk(r, L, s, settings, sameCnt, neighborLessons){
+function ruleSlotOk(r, L, s, settings, daySame, neighborLessons){
   var d = Math.floor(s / NH), h = s % NH;
   if (r.type === "subjHours") return h >= (r.a || 1) - 1 && h <= (r.b || NH) - 1;
   if (r.type === "subjNotLast") return h < lastHourOf(settings, d);
-  if (r.type === "subjMaxDay") return sameCnt + 1 <= (r.n || 1);
+  if (r.type === "subjMaxDay") return daySame(d) + 1 <= (r.n || 1);
+  if (r.type === "subjMinDays"){
+    var gap = Math.max(2, Math.min(4, r.n || 2));
+    for (var k = 1; k < gap; k++){
+      if (d - k >= 0 && daySame(d - k) > 0) return false;
+      if (d + k <= 4 && daySame(d + k) > 0) return false;
+    }
+    return true;
+  }
+  if (r.type === "subjMaxWeek"){
+    var tot = 0;
+    for (var dd = 0; dd < 5; dd++) tot += daySame(dd);
+    return tot + 1 <= (r.n || 1);
+  }
+  if (r.type === "subjDays") return (r.days || [0, 1, 2, 3, 4]).indexOf(d) >= 0;
   if (r.type === "subjNotNext"){
     for (var nxi = 0; nxi < 2; nxi++){
       var sn = s + (nxi ? 1 : -1);
@@ -406,6 +423,19 @@ function softPenalty(ls, teachers, classes, settings, placement){
           var cntR = csR[L.classIds[0] + "|" + dr + "|" + L.subject] || 0;
           var kR = r1.id + "|" + L.classIds[0] + "|" + dr + "|" + L.subject;
           if (cntR > (r1.n || 1) && !seenR[kR]){ pen += (+r1.weight || 100) * (cntR - (r1.n || 1)); seenR[kR] = 1; }
+        } else if (r1.type === "subjMinDays"){
+          var gap1 = Math.max(2, Math.min(4, r1.n || 2));
+          var kR4 = r1.id + "|" + L.id;
+          if (!seenR[kR4]){
+            for (var kg = 1; kg < gap1; kg++){
+              if (dr - kg >= 0 && (csR[L.classIds[0] + "|" + (dr - kg) + "|" + L.subject] || 0) > 0){
+                pen += (+r1.weight || 100); seenR[kR4] = 1; break;
+              }
+            }
+          }
+        } else if (r1.type === "subjDays"){
+          var ds1 = r1.days || [0, 1, 2, 3, 4];
+          if (ds1.indexOf(dr) < 0){ pen += (+r1.weight || 100); seenR[r1.id + "|" + L.id] = 1; }
         } else if (r1.type === "subjNotNext"){
           var snR = sr + 1;
           if (snR >= 5 * NH || Math.floor(snR / NH) !== dr) continue;
@@ -417,6 +447,22 @@ function softPenalty(ls, teachers, classes, settings, placement){
               if (rulePairHit(r1, L, O) && !seenR[kR2]){ pen += (+r1.weight || 100); seenR[kR2] = 1; }
             });
           });
+        }
+      }
+    });
+    softR.filter(function(r7){ return r7.type === "subjMaxWeek"; }).forEach(function(r7){
+      var wk = {};
+      for (var kv4 in csR){
+        var pp = kv4.split("|");
+        if (pp.length < 3) continue;
+        if (!subjMatch(pp.slice(2).join("|"), r7.subject)) continue;
+        if (r7.classId && pp[0] !== r7.classId) continue;
+        wk[pp[0] + "|" + pp.slice(2).join("|")] = (wk[pp[0] + "|" + pp.slice(2).join("|")] || 0) + csR[kv4];
+      }
+      for (var wk2 in wk){
+        if (wk[wk2] > (r7.n || 1)){
+          pen += (+r7.weight || 100) * (wk[wk2] - (r7.n || 1));
+          seenR[r7.id + "|" + wk2] = 1;
         }
       }
     });
@@ -497,13 +543,12 @@ function repairSoft(ls, teachers, classes, settings, placement){
     for (var rf = 0; rf < hardR.length; rf++){
       var rr2 = hardR[rf];
       if (!ruleMatch(rr2, L)) continue;
-      var sameC2 = 0;
-      if (rr2.type === "subjMaxDay"){
-        sameC2 = cntSD[L.classIds[0] + "|" + d + "|" + L.subject] || 0;
-        var sOldF = placement[L.id];
-        if (sOldF != null && Math.floor(sOldF / NH) === d) sameC2--;
-      }
-      if (!ruleSlotOk(rr2, L, s, settings, sameC2, function(sn){
+      var sOldR = placement[L.id];
+      if (!ruleSlotOk(rr2, L, s, settings, function(d2){
+        var cR = cntSD[L.classIds[0] + "|" + d2 + "|" + L.subject] || 0;
+        if (sOldR != null && Math.floor(sOldR / NH) === d2) cR--;
+        return cR;
+      }, function(sn){
         var out = [];
         for (var rc2 = 0; rc2 < L.classIds.length; rc2++){ var v2 = busyC[L.classIds[rc2]] && busyC[L.classIds[rc2]][sn]; if (v2) out = out.concat(v2); }
         return out;
@@ -680,8 +725,7 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
     for (var ri = 0; ri < hardR.length; ri++){
       var rr = hardR[ri];
       if (!ruleMatch(rr, L)) continue;
-      var sameC = rr.type === "subjMaxDay" ? (subjDay[L.classIds[0] + "|" + d + "|" + L.subject] || 0) : 0;
-      if (!ruleSlotOk(rr, L, s, settings, sameC, function(sn){
+      if (!ruleSlotOk(rr, L, s, settings, function(d2){ return subjDay[L.classIds[0] + "|" + d2 + "|" + L.subject] || 0; }, function(sn){
         var out = [];
         for (var rc = 0; rc < L.classIds.length; rc++){ var v = busyC[L.classIds[rc]] && busyC[L.classIds[rc]][sn]; if (v) out = out.concat(v); }
         return out;
@@ -899,6 +943,17 @@ function findViolations(ls, teachers, classes, placement, settings){
           errs.push("Reguła własna: „" + r5.subject + "” tylko na lekcjach " + (r5.a || 1) + "–" + (r5.b || NH) + " — a jest " + DAYS[dv] + ", lekcja " + (hv + 1) + " (" + cNm(L.classIds[0]) + ")");
         } else if (r5.type === "subjNotLast" && hv >= lastHourOf(settings, dv)){
           errs.push("Reguła własna: „" + r5.subject + "” nie na ostatniej lekcji dnia — a jest " + DAYS[dv] + ", lekcja " + (hv + 1) + " (" + cNm(L.classIds[0]) + ")");
+        } else if (r5.type === "subjMinDays"){
+          var gap5 = Math.max(2, Math.min(4, r5.n || 2));
+          for (var kg2 = 1; kg2 < gap5; kg2++){
+            if (dv - kg2 >= 0 && (csV[L.classIds[0] + "|" + (dv - kg2) + "|" + L.subject] || 0) > 0){
+              errs.push("Reguła własna: „" + r5.subject + "” min. " + gap5 + " dni odstępu — a klasa " + cNm(L.classIds[0]) + " ma ją " + DAYS[dv - kg2] + " i " + DAYS[dv]);
+              break;
+            }
+          }
+        } else if (r5.type === "subjDays"){
+          var ds5 = r5.days || [0, 1, 2, 3, 4];
+          if (ds5.indexOf(dv) < 0) errs.push("Reguła własna: „" + r5.subject + "” nie może być w " + DAYS[dv] + " — a klasa " + cNm(L.classIds[0]) + " ma ją wtedy (lekcja " + (hv + 1) + ")");
         } else if (r5.type === "subjNotNext"){
           var snv = sv + 1;
           if (snv >= 5 * NH || Math.floor(snv / NH) !== dv || seenV[r5.id + "|" + L.classIds[0] + "|" + sv]) continue;
@@ -923,6 +978,18 @@ function findViolations(ls, teachers, classes, placement, settings){
         if (csV[kv2] > (r6.n || 1) && subjMatch(subv, r6.subject) && (!r6.classId || cidv === r6.classId))
           errs.push("Reguła własna: „" + r6.subject + "” maks. " + r6.n + " lekcje dziennie — a klasa " + cNm(cidv) + " ma " + csV[kv2] + " w " + DAYS[+dv2]);
       }
+    });
+    hrs.filter(function(r8){ return r8.type === "subjMaxWeek"; }).forEach(function(r8){
+      var wkV = {};
+      for (var kv5 in csV){
+        var pp5 = kv5.split("|");
+        if (pp5.length < 3) continue;
+        if (!subjMatch(pp5.slice(2).join("|"), r8.subject)) continue;
+        if (r8.classId && pp5[0] !== r8.classId) continue;
+        wkV[pp5[0] + "|" + pp5.slice(2).join("|")] = (wkV[pp5[0] + "|" + pp5.slice(2).join("|")] || 0) + csV[kv5];
+      }
+      for (var wk3 in wkV) if (wkV[wk3] > (r8.n || 1))
+        errs.push("Reguła własna: „" + r8.subject + "” maks. " + (r8.n || 1) + " lekcje tygodniowo — a klasa " + cNm(wk3.split("|")[0]) + " ma " + wkV[wk3]);
     });
   }
   return errs;
@@ -1561,11 +1628,13 @@ function toggC(s){
   save(); render();
 }
 var ruleTyp = "subjHours", ruleDraft = null, ruleEditId = null;
-function ruleDraftInit(){ ruleDraft = { kl: "", sub: "", sub2: "", a: 1, b: NH, n: 1, w: 100, hard: "hard" }; }
+function ruleDraftInit(){ ruleDraft = { kl: "", sub: "", sub2: "", a: 1, b: NH, n: 1, w: 100, hard: "hard", days: [0, 1, 2, 3, 4] }; }
 function ruleTypSet(v){
   if (!ruleDraft) ruleDraftInit();
   ["kl", "sub", "sub2", "a", "b", "n", "w", "hard"].forEach(function(k){ var e = document.getElementById("r_" + k); if (e) ruleDraft[k] = e.value; });
-  ruleTyp = v; render();
+  ruleTyp = v;
+  if (v === "subjMinDays" && (!ruleDraft.n || parseInt(ruleDraft.n) < 2)) ruleDraft.n = 2;
+  render();
 }
 function ruleDS(k){
   if (!ruleDraft) ruleDraftInit();
@@ -1584,10 +1653,14 @@ function ruleSave(){
   var a = Math.max(1, Math.min(NH, parseInt(aE ? aE.value : 1) || 1));
   var b = Math.max(1, Math.min(NH, parseInt(bE ? bE.value : NH) || NH));
   if (ruleTyp === "subjHours" && a > b){ flash("Lekcja „od” nie może być późniejsza niż „do”.", "warn"); return; }
+  var nRaw = Math.max(1, Math.min(40, parseInt(nE ? nE.value : 1) || 1));
+  if (ruleTyp === "subjMinDays") nRaw = Math.max(2, Math.min(4, nRaw < 2 ? 2 : nRaw));
+  var daysD = ((ruleTyp === "subjDays" && ruleDraft && ruleDraft.days) ? ruleDraft.days : (ruleDraft && ruleDraft.days) || []).slice().sort();
+  if (ruleTyp === "subjDays" && !daysD.length){ flash("Zaznacz choć jeden dzień tygodnia (Pn–Pt).", "warn"); return; }
   var r = {
     id: ruleEditId || ("r" + Date.now()),
     type: ruleTyp, classId: d.kl || "", subject: sub, subject2: sub2,
-    a: a, b: b, n: Math.max(1, Math.min(8, parseInt(nE ? nE.value : 1) || 1)),
+    a: a, b: b, n: nRaw, days: daysD,
     hard: d.hard !== "soft", weight: Math.max(10, parseInt(d.w) || 100), on: true
   };
   var rs = S.settings.rules = S.settings.rules || [];
@@ -1602,8 +1675,18 @@ function ruleSave(){
 }
 function ruleToggle(id){ (S.settings.rules || []).forEach(function(r){ if (r.id === id) r.on = r.on === false; }); save(); render(); }
 function ruleDel(id){ S.settings.rules = (S.settings.rules || []).filter(function(x){ return x.id !== id; }); if (ruleEditId === id) ruleEditId = null; save(); render(); }
-function ruleEdit(id){ (S.settings.rules || []).forEach(function(r){ if (r.id !== id) return; ruleEditId = id; ruleTyp = r.type; ruleDraft = { kl: r.classId, sub: r.subject, sub2: r.subject2, a: r.a, b: r.b, n: r.n, w: r.weight, hard: r.hard ? "hard" : "soft" }; }); render(); }
+function ruleEdit(id){ (S.settings.rules || []).forEach(function(r){ if (r.id !== id) return; ruleEditId = id; ruleTyp = r.type; ruleDraft = { kl: r.classId, sub: r.subject, sub2: r.subject2, a: r.a, b: r.b, n: r.n, w: r.weight, hard: r.hard ? "hard" : "soft", days: (r.days && r.days.length ? r.days : [0, 1, 2, 3, 4]).slice() }; }); render(); }
 function ruleCancel(){ ruleEditId = null; ruleDraftInit(); ruleTyp = "subjHours"; render(); }
+function ruleDayTog(dd){
+  if (!ruleDraft) ruleDraftInit();
+  if (!ruleDraft.days || !ruleDraft.days.length) ruleDraft.days = [0, 1, 2, 3, 4];
+  var ix = ruleDraft.days.indexOf(dd);
+  if (ix >= 0){
+    if (ruleDraft.days.length <= 1){ flash("Przynajmniej jeden dzień musi zostać włączony.", "warn"); return; }
+    ruleDraft.days.splice(ix, 1);
+  } else ruleDraft.days.push(dd);
+  render();
+}
 var chatOpen = false, chatBusy = false, chatMsgs = [];
 var LS_CHAT = "plan-zajec-vibe-chat-v1";
 function chatLoad(){ try{ var rawC = localStorage.getItem(LS_CHAT); chatMsgs = rawC ? (JSON.parse(rawC) || []) : []; }catch(e){ chatMsgs = []; } }
@@ -1761,6 +1844,9 @@ function renderOgr(){
     + '<option value="subjNotLast"' + (ruleTyp === "subjNotLast" ? " selected" : "") + '>Przedmiot nie na ostatniej lekcji dnia</option>'
     + '<option value="subjMaxDay"' + (ruleTyp === "subjMaxDay" ? " selected" : "") + '>Przedmiot maks. N lekcji dziennie w klasie</option>'
     + '<option value="subjNotNext"' + (ruleTyp === "subjNotNext" ? " selected" : "") + '>Dwa przedmioty nigdy obok siebie</option>'
+    + '<option value="subjMinDays"' + (ruleTyp === "subjMinDays" ? " selected" : "") + '>Przedmiot min. N dni odstępu (nie w dwa kolejne dni)</option>'
+    + '<option value="subjMaxWeek"' + (ruleTyp === "subjMaxWeek" ? " selected" : "") + '>Przedmiot maks. N lekcji tygodniowo w klasie</option>'
+    + '<option value="subjDays"' + (ruleTyp === "subjDays" ? " selected" : "") + '>Przedmiot tylko w wybrane dni tygodnia</option>'
     + "</select></div>";
   var subsR = [], seenR2 = {};
   S.activities.forEach(function(a){ var k2 = normName(a.subject); if (!seenR2[k2]){ seenR2[k2] = 1; subsR.push(a.subject); } });
@@ -1777,13 +1863,24 @@ function renderOgr(){
     h += '<div class="row"><span class="lbl">od lekcji</span><input id="r_a" class="inp" style="width:64px" type="number" min="1" max="' + NH + '" value="' + esc(ruleDraft.a) + '"><span class="lbl">do lekcji</span><input id="r_b" class="inp" style="width:64px" type="number" min="1" max="' + NH + '" value="' + esc(ruleDraft.b) + '"></div>';
   if (ruleTyp === "subjMaxDay")
     h += '<div class="row"><span class="lbl">maks. dziennie:</span><input id="r_n" class="inp" style="width:64px" type="number" min="1" max="8" value="' + esc(ruleDraft.n) + '"></div>';
+  if (ruleTyp === "subjMinDays")
+    h += '<div class="row"><span class="lbl">min. odstęp dni:</span><input id="r_n" class="inp" style="width:64px" type="number" min="2" max="4" value="' + esc(ruleDraft.n) + '"><span class="hint" style="margin:0">2 = nie w dwa kolejne dni</span></div>';
+  if (ruleTyp === "subjMaxWeek")
+    h += '<div class="row"><span class="lbl">maks. tygodniowo:</span><input id="r_n" class="inp" style="width:64px" type="number" min="1" max="40" value="' + esc(ruleDraft.n) + '"></div>';
+  if (ruleTyp === "subjDays"){
+    var dn = ["Pn", "Wt", "Śr", "Cz", "Pt"];
+    h += '<div class="row"><span class="lbl">Dni:</span>' + dn.map(function(x, ix2){
+      var on = (ruleDraft.days || []).indexOf(ix2) >= 0;
+      return '<button class="btn2' + (on ? " on" : "") + '" style="margin:0 2px" onclick="ruleDayTog(' + ix2 + ')">' + x + '</button>';
+    }).join("") + '<span class="hint" style="margin:0">podświetlone dni = przedmiot wtedy może być</span></div>';
+  }
   h += '<div class="row"><span class="lbl">Oddział:</span><select id="r_kl" class="inp" onchange="ruleDS(\'kl\')"><option value="">wszystkie oddziały</option>'
     + S.classes.map(function(c){ return '<option value="' + c.id + '"' + (ruleDraft.kl === c.id ? " selected" : "") + ">" + esc(c.name) + "</option>"; }).join("")
     + "</select></div>";
   h += '<div class="row"><select id="r_hard" class="inp" onchange="ruleDS(\'hard\')"><option value="hard"' + (ruleDraft.hard !== "soft" ? " selected" : "") + '>🔒 Twarda — zawsze</option><option value="soft"' + (ruleDraft.hard === "soft" ? " selected" : "") + '>🪶 Miękka — kara</option></select>'
     + '<span class="lbl">waga:</span><input id="r_w" class="inp" style="width:64px" type="number" min="10" value="' + esc(ruleDraft.w) + '"' + (ruleDraft.hard === "soft" ? "" : " disabled") + "></div>";
   h += '<div class="row"><button class="btn" onclick="ruleSave()">' + (ruleEditId ? "💾 Zapisz zmiany" : "➕ Dodaj regułę") + "</button>" + (ruleEditId ? '<button class="btn2" onclick="ruleCancel()">Anuluj</button>' : "") + "</div>";
-  h += '<p class="hint">Przykłady: „Matematyka” tylko lekcje 1–4 · „Wych. fizyczne” nigdy ostatnie · „Rewalidacja” maks. 2 dziennie · „W-F” nie obok „Świetlicy”. Reguły działają przy „🪄 Wygeneruj automatycznie” i w „✅ Sprawdź zasady”.</p>';
+  h += '<p class="hint">Przykłady: „Matematyka” tylko lekcje 1–4 · „Wych. fizyczne” nigdy ostatnie · „Rewalidacja” maks. 2 dziennie · „W-F” nie obok „Świetlicy” · „Język polski” min. 2 dni odstępu · „Plastyka” tylko Pn i Śr · „Muzyka” maks. 2 tygodniowo. Reguły działają przy „🪄 Wygeneruj automatycznie” i w „✅ Sprawdź zasady”.</p>';
   h += "</div></div>";
   h += '<div class="card"><div class="hd">🕐 Godziny lekcyjne</div><div class="bd"><div class="ltcnt">';
   var lt2 = lessonTimes();
