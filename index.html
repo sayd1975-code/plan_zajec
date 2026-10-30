@@ -1,5 +1,4 @@
 
-
 <!doctype html>
 <html lang="pl">
 <head>
@@ -170,7 +169,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.15.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.16.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -1762,7 +1761,7 @@ function confirmClick(key, fn){
 }
 function loadSPS7(){ S = sps7State(); sel = null; importRows = null; importText = ""; save(); render(); flash("Wczytano strukturę SPS nr 7. Dodaj nauczycieli / wklej przydziały.", "ok"); }
 function loadDemo(){ S = normalize(demoState()); sel = null; importRows = null; importText = ""; save(); render(); flash("Wczytano przykładową szkołę.", "ok"); }
-function clearAll(){ S = normalize({ teachers: [], classes: [], activities: [], placement: {}, settings: { teacherMaxPerDay: 7, classMaxPerDay: 7, lessonTimes: defaultLessonTimes() } }); sel = null; importRows = null; importText = ""; save(); render(); flash("Wyczyszczono wszystko.", "ok"); }
+function clearAll(){ var kUrl = (S && S.settings) ? (S.settings.assistantUrl || "") : "", kTok = (S && S.settings) ? (S.settings.chatToken || "") : ""; S = normalize({ teachers: [], classes: [], activities: [], placement: {}, settings: { teacherMaxPerDay: 7, classMaxPerDay: 7, lessonTimes: defaultLessonTimes(), assistantUrl: kUrl, chatToken: kTok } }); sel = null; importRows = null; importText = ""; save(); render(); flash("Wyczyszczono wszystko (adres asystenta zachowany).", "ok"); }
 function addClass(){
   var v = document.getElementById("newClassName").value.trim();
   if (!v) return;
