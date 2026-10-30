@@ -170,7 +170,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.10.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.11.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -340,9 +340,10 @@ function ruleDesc(r){
   if (r.type === "subjMinDays") return "„" + r.subject + "” min. " + (r.n || 2) + " dni odstępu w tygodniu (" + cn + ")";
   if (r.type === "subjMaxWeek") return "„" + r.subject + "” maks. " + (r.n || 1) + " lekcje tygodniowo w klasie (" + cn + ")";
   if (r.type === "subjDays") return "„" + r.subject + "” tylko w dni: " + ((r.days && r.days.length) ? r.days.slice().sort().map(function(x){ return ["Pn", "Wt", "Śr", "Cz", "Pt"][x] || "?"; }).join(", ") : "—") + " (" + cn + ")";
+  if (r.type === "subjBlock") return "„" + r.subject + "” w blokach po " + (r.n || 2) + " lekcje pod rząd (" + cn + ")";
   return "Reguła";
 }
-function ruleSlotOk(r, L, s, settings, daySame, neighborLessons){
+function ruleSlotOk(r, L, s, settings, daySame, neighborLessons, subjSlots){
   var d = Math.floor(s / NH), h = s % NH;
   if (r.type === "subjHours") return h >= (r.a || 1) - 1 && h <= (r.b || NH) - 1;
   if (r.type === "subjNotLast") return h < lastHourOf(settings, d);
@@ -361,6 +362,23 @@ function ruleSlotOk(r, L, s, settings, daySame, neighborLessons){
     return tot + 1 <= (r.n || 1);
   }
   if (r.type === "subjDays") return (r.days || [0, 1, 2, 3, 4]).indexOf(d) >= 0;
+  if (r.type === "subjBlock"){
+    var bn = Math.max(2, Math.min(4, r.n || 2));
+    var sl = subjSlots ? subjSlots() : [];
+    var lo = s, hi = s;
+    while (sl.indexOf(lo - 1) >= 0 && Math.floor((lo - 1) / NH) === d) lo--;
+    while (sl.indexOf(hi + 1) >= 0 && Math.floor((hi + 1) / NH) === d) hi++;
+    if (hi - lo + 1 > bn) return false;
+    if (hi > lo) return true; /* domyka lub rozbudowuje blok */
+    /* s nie łączy się z niczym: dozwolone tylko, gdy w klasie nie ma osamotnionej lekcji tego przedmiotu */
+    for (var si = 0; si < sl.length; si++){
+      var x = sl[si], xn = Math.floor(x / NH);
+      var left = sl.indexOf(x - 1) >= 0 && Math.floor((x - 1) / NH) === xn;
+      var right = sl.indexOf(x + 1) >= 0 && Math.floor((x + 1) / NH) === xn;
+      if (!left && !right) return false; /* istnieje solo — nowa lekcja musi domknąć blok */
+    }
+    return true;
+  }
   if (r.type === "subjNotNext"){
     for (var nxi = 0; nxi < 2; nxi++){
       var sn = s + (nxi ? 1 : -1);
@@ -416,10 +434,11 @@ function softPenalty(ls, teachers, classes, settings, placement){
   }
   var softR = rulesOn(settings).filter(function(r){ return !r.hard; });
   if (softR.length){
-    var bsR = {}, csR = {};
+    var bsR = {}, csR = {}, sloc = {};
     ls.forEach(function(L){ var sr = placement[L.id]; if (sr == null) return;
       L.classIds.forEach(function(cid){ (bsR[cid + "|" + sr] = bsR[cid + "|" + sr] || []).push(L); });
-      var kr = L.classIds[0] + "|" + Math.floor(sr / NH) + "|" + L.subject; csR[kr] = (csR[kr] || 0) + 1; });
+      var kr = L.classIds[0] + "|" + Math.floor(sr / NH) + "|" + L.subject; csR[kr] = (csR[kr] || 0) + 1;
+      (sloc[L.classIds[0] + "|" + L.subject + "|" + (L.group || "")] = sloc[L.classIds[0] + "|" + L.subject + "|" + (L.group || "")] || []).push(sr); });
     var seenR = {};
     ls.forEach(function(L){
       var sr = placement[L.id]; if (sr == null) return;
@@ -478,6 +497,25 @@ function softPenalty(ls, teachers, classes, settings, placement){
         }
       }
     });
+    softR.filter(function(r7b){ return r7b.type === "subjBlock"; }).forEach(function(r7b){
+      var bnB = Math.max(2, Math.min(4, r7b.n || 2));
+      var byCG = {};
+      ls.forEach(function(L){ if (!ruleMatch(r7b, L)) return;
+        var kk = L.classIds[0] + "|" + (L.group || "") + "|" + L.subject; (byCG[kk] = byCG[kk] || []).push(L); });
+      for (var kk2 in byCG){
+        var slots = byCG[kk2].map(function(L){ return placement[L.id]; }).filter(function(sv4){ return sv4 != null; }).sort(function(a2, b2){ return a2 - b2; });
+        if (slots.length < 2) continue;
+        var allowed = slots.length % bnB, loose = 0, run = 1;
+        for (var q5 = 1; q5 <= slots.length; q5++){
+          if (q5 === slots.length || slots[q5] - slots[q5 - 1] !== 1){ loose += run % bnB; run = 1; }
+          else run++;
+        }
+        if (loose > allowed){
+          pen += (+r7b.weight || 100) * (loose - allowed);
+          seenR[r7b.id + "|" + kk2] = 1;
+        }
+      }
+    });
     softR.forEach(function(r2){
       var nR = 0;
       for (var kR3 in seenR) if (kR3.indexOf(r2.id + "|") === 0) nR++;
@@ -532,13 +570,14 @@ function repairSoft(ls, teachers, classes, settings, placement){
   var clsBlock = {}; classes.forEach(function(c){ clsBlock[c.id] = {}; (c.blocked || []).forEach(function(sb){ clsBlock[c.id][sb] = true; }); });
   var unavail = {}; teachers.forEach(function(t){ unavail[t.id] = {}; t.unavail.forEach(function(s){ unavail[t.id][s] = true; }); });
   var hardR = rulesOn(settings).filter(function(r){ return r.hard; });
-  var cntSD = {};
+  var cntSD = {}, slotSD = {};
   var busyT = {}, busyC = {}, loadT = {}, loadC = {};
   function arr(m, k){ if (!m[k]) m[k] = [0,0,0,0,0]; return m[k]; }
   ls.forEach(function(L){ var s = placement[L.id]; if (s == null) return;
     (busyT[L.teacherId] = busyT[L.teacherId] || {})[s] = true;
     var kSD = L.classIds[0] + "|" + Math.floor(s / NH) + "|" + L.subject;
     cntSD[kSD] = (cntSD[kSD] || 0) + 1;
+    (slotSD[L.classIds[0] + "|" + L.subject + "|" + (L.group || "")] = slotSD[L.classIds[0] + "|" + L.subject + "|" + (L.group || "")] || []).push(s);
     L.classIds.forEach(function(cid){
       var m = busyC[cid] = busyC[cid] || {};
       var fresh = !m[s] || m[s].length === 0;
@@ -564,6 +603,10 @@ function repairSoft(ls, teachers, classes, settings, placement){
         var out = [];
         for (var rc2 = 0; rc2 < L.classIds.length; rc2++){ var v2 = busyC[L.classIds[rc2]] && busyC[L.classIds[rc2]][sn]; if (v2) out = out.concat(v2); }
         return out;
+      }, function(){
+        var outS = slotSD[L.classIds[0] + "|" + L.subject + "|" + (L.group || "")] || [], outF = outS.slice(), ixF = outF.indexOf(sOldR);
+        if (ixF >= 0) outF.splice(ixF, 1); /* przenoszona lekcja nie może sama sobie blokować nowego slotu */
+        return outF;
       })) return false;
     }
     var lk = kindL(L);
@@ -586,6 +629,7 @@ function repairSoft(ls, teachers, classes, settings, placement){
     var d0 = Math.floor(s0 / NH), d1 = Math.floor(s1 / NH);
     var k0SD = L.classIds[0] + "|" + d0 + "|" + L.subject; if (cntSD[k0SD]) cntSD[k0SD]--;
     var k1SD = L.classIds[0] + "|" + d1 + "|" + L.subject; cntSD[k1SD] = (cntSD[k1SD] || 0) + 1;
+    var slM = slotSD[L.classIds[0] + "|" + L.subject + "|" + (L.group || "")]; if (slM){ var im = slM.indexOf(s0); if (im >= 0) slM.splice(im, 1); slM.push(s1); }
     delete busyT[L.teacherId][s0];
     arr(loadT, L.teacherId)[Math.floor(s0 / NH)]--;
     L.classIds.forEach(function(cid){
@@ -691,7 +735,7 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
   var byId = {}; ls.forEach(function(l){ byId[l.id] = l; });
   var tNameM = {}; teachers.forEach(function(t){ tNameM[t.id] = t.name; });
   var unavail = {}; teachers.forEach(function(t){ unavail[t.id] = {}; t.unavail.forEach(function(s){ unavail[t.id][s] = true; }); });
-  var busyT = {}, busyC = {}, loadT = {}, loadC = {}, subjDay = {}, atSlot = {}, tDay = {};
+  var busyT = {}, busyC = {}, loadT = {}, loadC = {}, subjDay = {}, subjSlot = {}, atSlot = {}, tDay = {};
   var hardR = rulesOn(settings).filter(function(r){ return r.hard; });
   var tracksM = {}; classes.forEach(function(c){ tracksM[c.id] = rewTracksOf(c); });
   var clsBlock = {}; classes.forEach(function(c){ clsBlock[c.id] = {}; (c.blocked || []).forEach(function(sb){ clsBlock[c.id][sb] = true; }); });
@@ -711,6 +755,7 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
     daySlots(L.teacherId)[dayOf(s)].push(s % NH);
     var k = L.classIds[0] + "|" + dayOf(s) + "|" + L.subject;
     subjDay[k] = (subjDay[k] || 0) + 1;
+    (subjSlot[L.classIds[0] + "|" + L.subject + "|" + (L.group || "")] = subjSlot[L.classIds[0] + "|" + L.subject + "|" + (L.group || "")] || []).push(s);
     (atSlot[s] = atSlot[s] || []).push(L);
   }
   function unplace(L){
@@ -725,6 +770,7 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
     var dl = daySlots(L.teacherId)[dayOf(s)], ix = dl.indexOf(s % NH); if (ix >= 0) dl.splice(ix, 1);
     var k = L.classIds[0] + "|" + dayOf(s) + "|" + L.subject;
     subjDay[k] = Math.max(0, (subjDay[k] || 0) - 1);
+    var slU = subjSlot[L.classIds[0] + "|" + L.subject + "|" + (L.group || "")]; if (slU){ var isU = slU.indexOf(s); if (isU >= 0) slU.splice(isU, 1); }
     var v = atSlot[s]; if (v){ var i = v.indexOf(L); if (i >= 0) v.splice(i, 1); }
   }
   function feasible(L, s){
@@ -741,7 +787,7 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
         var out = [];
         for (var rc = 0; rc < L.classIds.length; rc++){ var v = busyC[L.classIds[rc]] && busyC[L.classIds[rc]][sn]; if (v) out = out.concat(v); }
         return out;
-      })) return false;
+      }, function(){ return subjSlot[L.classIds[0] + "|" + L.subject + "|" + (L.group || "")] || []; })) return false;
     }
     var lk = kindL(L);
     for (var ci = 0; ci < L.classIds.length; ci++){
@@ -940,10 +986,11 @@ function findViolations(ls, teachers, classes, placement, settings){
   for (var ck in loadC) for (var dc = 0; dc < 5; dc++) if (loadC[ck][dc] > settings.classMaxPerDay) errs.push("Klasa " + cNm(ck) + " ma " + loadC[ck][dc] + " lekcji w " + DAYS[dc] + " (limit " + settings.classMaxPerDay + ")");
   var hrs = rulesOn(settings).filter(function(r){ return r.hard; });
   if (hrs.length){
-    var bsV = {}, csV = {};
-    ls.forEach(function(L){ var sv = placement[L.id]; if (sv == null) return;
-      L.classIds.forEach(function(cid){ (bsV[cid + "|" + sv] = bsV[cid + "|" + sv] || []).push(L); });
-      var kv = L.classIds[0] + "|" + Math.floor(sv / NH) + "|" + L.subject; csV[kv] = (csV[kv] || 0) + 1; });
+    var bsV = {}, csV = {}, svM = {};
+    ls.forEach(function(L){ var sv2 = placement[L.id]; if (sv2 == null) return;
+      L.classIds.forEach(function(cid){ (bsV[cid + "|" + sv2] = bsV[cid + "|" + sv2] || []).push(L); });
+      var kv = L.classIds[0] + "|" + Math.floor(sv2 / NH) + "|" + L.subject; csV[kv] = (csV[kv] || 0) + 1;
+      (svM[L.classIds[0] + "|" + L.subject + "|" + (L.group || "")] = svM[L.classIds[0] + "|" + L.subject + "|" + (L.group || "")] || []).push(sv2); });
     var seenV = {};
     ls.forEach(function(L){
       var sv = placement[L.id]; if (sv == null) return;
@@ -1002,6 +1049,23 @@ function findViolations(ls, teachers, classes, placement, settings){
       }
       for (var wk3 in wkV) if (wkV[wk3] > (r8.n || 1))
         errs.push("Reguła własna: „" + r8.subject + "” maks. " + (r8.n || 1) + " lekcje tygodniowo — a klasa " + cNm(wk3.split("|")[0]) + " ma " + wkV[wk3]);
+    });
+    hrs.filter(function(r9){ return r9.type === "subjBlock"; }).forEach(function(r9){
+      var bn9 = Math.max(2, Math.min(4, r9.n || 2));
+      var byCG2 = {};
+      ls.forEach(function(L){ if (!ruleMatch(r9, L)) return;
+        var kk9 = L.classIds[0] + "|" + (L.group || "") + "|" + L.subject; (byCG2[kk9] = byCG2[kk9] || []).push(L); });
+      for (var kk8 in byCG2){
+        var slots9 = byCG2[kk8].map(function(L){ return placement[L.id]; }).filter(function(sv9){ return sv9 != null; }).sort(function(a9, b9){ return a9 - b9; });
+        if (slots9.length < 2) continue;
+        var allowed9 = slots9.length % bn9, loose9 = 0, run9 = 1;
+        for (var q9 = 1; q9 <= slots9.length; q9++){
+          if (q9 === slots9.length || slots9[q9] - slots9[q9 - 1] !== 1){ loose9 += run9 % bn9; run9 = 1; }
+          else run9++;
+        }
+        if (loose9 > allowed9)
+          errs.push("Reguła własna: „" + r9.subject + "” w blokach po " + bn9 + " pod rząd — a klasa " + cNm(kk8.split("|")[0]) + " ma " + loose9 + (loose9 === 1 ? " lekcję" : " lekcje") + " luzem (dozwolonych: " + allowed9 + ")");
+      }
     });
   }
   return errs;
@@ -1645,7 +1709,7 @@ function ruleTypSet(v){
   if (!ruleDraft) ruleDraftInit();
   ["kl", "sub", "sub2", "a", "b", "n", "w", "hard"].forEach(function(k){ var e = document.getElementById("r_" + k); if (e) ruleDraft[k] = e.value; });
   ruleTyp = v;
-  if (v === "subjMinDays" && (!ruleDraft.n || parseInt(ruleDraft.n) < 2)) ruleDraft.n = 2;
+  if ((v === "subjMinDays" || v === "subjBlock") && (!ruleDraft.n || parseInt(ruleDraft.n) < 2)) ruleDraft.n = 2;
   render();
 }
 function ruleDS(k){
@@ -1666,7 +1730,7 @@ function ruleSave(){
   var b = Math.max(1, Math.min(NH, parseInt(bE ? bE.value : NH) || NH));
   if (ruleTyp === "subjHours" && a > b){ flash("Lekcja „od” nie może być późniejsza niż „do”.", "warn"); return; }
   var nRaw = Math.max(1, Math.min(40, parseInt(nE ? nE.value : 1) || 1));
-  if (ruleTyp === "subjMinDays") nRaw = Math.max(2, Math.min(4, nRaw < 2 ? 2 : nRaw));
+  if (ruleTyp === "subjMinDays" || ruleTyp === "subjBlock") nRaw = Math.max(2, Math.min(4, nRaw < 2 ? 2 : nRaw));
   var daysD = ((ruleTyp === "subjDays" && ruleDraft && ruleDraft.days) ? ruleDraft.days : (ruleDraft && ruleDraft.days) || []).slice().sort();
   if (ruleTyp === "subjDays" && !daysD.length){ flash("Zaznacz choć jeden dzień tygodnia (Pn–Pt).", "warn"); return; }
   var r = {
@@ -1862,6 +1926,7 @@ function renderOgr(){
     + '<option value="subjMinDays"' + (ruleTyp === "subjMinDays" ? " selected" : "") + '>Przedmiot min. N dni odstępu (nie w dwa kolejne dni)</option>'
     + '<option value="subjMaxWeek"' + (ruleTyp === "subjMaxWeek" ? " selected" : "") + '>Przedmiot maks. N lekcji tygodniowo w klasie</option>'
     + '<option value="subjDays"' + (ruleTyp === "subjDays" ? " selected" : "") + '>Przedmiot tylko w wybrane dni tygodnia</option>'
+    + '<option value="subjBlock"' + (ruleTyp === "subjBlock" ? " selected" : "") + '>Przedmiot w blokach po N lekcji pod rząd (np. 2 WF obok siebie)</option>'
     + "</select></div>";
   var subsR = [], seenR2 = {};
   S.activities.forEach(function(a){ var k2 = normName(a.subject); if (!seenR2[k2]){ seenR2[k2] = 1; subsR.push(a.subject); } });
@@ -1882,6 +1947,8 @@ function renderOgr(){
     h += '<div class="row"><span class="lbl">min. odstęp dni:</span><input id="r_n" class="inp" style="width:64px" type="number" min="2" max="4" value="' + esc(ruleDraft.n) + '"><span class="hint" style="margin:0">2 = nie w dwa kolejne dni</span></div>';
   if (ruleTyp === "subjMaxWeek")
     h += '<div class="row"><span class="lbl">maks. tygodniowo:</span><input id="r_n" class="inp" style="width:64px" type="number" min="1" max="40" value="' + esc(ruleDraft.n) + '"></div>';
+  if (ruleTyp === "subjBlock")
+    h += '<div class="row"><span class="lbl">w blokach po:</span><input id="r_n" class="inp" style="width:64px" type="number" min="2" max="4" value="' + esc(ruleDraft.n) + '"><span class="hint" style="margin:0">np. 2 = dwie lekcje obok siebie; liczba godzin przedmiotu powinna się dzielić przez rozmiar bloku (2h WF → blok po 2)</span></div>';
   if (ruleTyp === "subjDays"){
     var dn = ["Pn", "Wt", "Śr", "Cz", "Pt"];
     h += '<div class="row"><span class="lbl">Dni:</span>' + dn.map(function(x, ix2){
@@ -1895,7 +1962,7 @@ function renderOgr(){
   h += '<div class="row"><select id="r_hard" class="inp" onchange="ruleDS(\'hard\')"><option value="hard"' + (ruleDraft.hard !== "soft" ? " selected" : "") + '>🔒 Twarda — zawsze</option><option value="soft"' + (ruleDraft.hard === "soft" ? " selected" : "") + '>🪶 Miękka — kara</option></select>'
     + '<span class="lbl">waga:</span><input id="r_w" class="inp" style="width:64px" type="number" min="10" value="' + esc(ruleDraft.w) + '"' + (ruleDraft.hard === "soft" ? "" : " disabled") + "></div>";
   h += '<div class="row"><button class="btn" onclick="ruleSave()">' + (ruleEditId ? "💾 Zapisz zmiany" : "➕ Dodaj regułę") + "</button>" + (ruleEditId ? '<button class="btn2" onclick="ruleCancel()">Anuluj</button>' : "") + "</div>";
-  h += '<p class="hint">Przykłady: „Matematyka” tylko lekcje 1–4 · „Wych. fizyczne” nigdy ostatnie · „Rewalidacja” maks. 2 dziennie · „W-F” nie obok „Świetlicy” · „Język polski” min. 2 dni odstępu · „Plastyka” tylko Pn i Śr · „Muzyka” maks. 2 tygodniowo. Reguły działają przy „🪄 Wygeneruj automatycznie” i w „✅ Sprawdź zasady”.</p>';
+  h += '<p class="hint">Przykłady: „Matematyka” tylko lekcje 1–4 · „Wych. fizyczne” nigdy ostatnie · „Rewalidacja” maks. 2 dziennie · „W-F” nie obok „Świetlicy” · „Język polski” min. 2 dni odstępu · „Plastyka” tylko Pn i Śr · „Muzyka” maks. 2 tygodniowo · „W-F” w blokach po 2 (2× obok siebie). Reguły działają przy „🪄 Wygeneruj automatycznie” i w „✅ Sprawdź zasady”.</p>';
   h += "</div></div>";
   h += '<div class="card"><div class="hd">🕐 Godziny lekcyjne</div><div class="bd"><div class="ltcnt">';
   var lt2 = lessonTimes();
