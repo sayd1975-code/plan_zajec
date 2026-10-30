@@ -170,7 +170,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.12.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.13.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -1726,6 +1726,172 @@ function analyze(){
   flash(erN === 0 ? "Rozpoznano " + okN + " wierszy — sprawdź podgląd i kliknij Importuj." : "Rozpoznano " + okN + " wierszy, " + erN + " odrzucono — sprawdź podgląd.", erN === 0 ? "ok" : "warn");
 }
 function cancelImport(){ importRows = null; render(); }
+/* ==================== dostępności nauczycieli: arkusz „Dyspozycyjność" + szybkie wpisywanie (v6.13) ==================== */
+var availRows = null;
+function parseDaySpec(spec){
+  var s = String(spec == null ? "" : spec).trim();
+  var out = { raw: s || "—", blocked: [], uncertain: false, unclear: false };
+  if (!s) return out;
+  var low = s.toLowerCase().replace(/\s+/g, " ");
+  if (s === "-"){ out.blocked = [1,2,3,4,5,6,7,8]; out.uncertain = true; return out; } /* „-" = raczej nieobecny, ale do potwierdzenia */
+  if (/^(cał|cal|dostępn)/.test(low)) return out; /* „cały/dostępny" = bez blokad */
+  low = low.replace(/\(\s*\d+\s*h[^)]*\)/g, " "); /* adnotacje typu „(3h)" to nie numery lekcji */
+  var nums = [];
+  var re = /(\d+)(?:\s*[-–]\s*(\d+))?/g, m;
+  while ((m = re.exec(low))){
+    var a = parseInt(m[1], 10), b = m[2] != null ? parseInt(m[2], 10) : a;
+    if (a >= 1 && a <= NH && b >= 1 && b <= NH && b >= a) for (var i = a; i <= b; i++) if (nums.indexOf(i) < 0) nums.push(i);
+  }
+  var wolny = /woln|nieobecn|nieregu/.test(low);
+  var mOd = low.match(/od\s+(\d)\s*(?:t|l|lek|godz)?/);
+  var mDo = low.match(/do\s+(\d)\s*(?:t|l|lek|godz)?/);
+  var mOdCzas = low.match(/od\s+(\d{1,2}):(\d{2})/);
+  var odL = null, doL = null;
+  if (mOdCzas){ /* np. „od 9:00" → numer lekcji wg lessonTimes */
+    var ltA = lessonTimes(), minA = parseInt(mOdCzas[1], 10) * 60 + parseInt(mOdCzas[2], 10);
+    for (var li = 0; li < ltA.length; li++){
+      var pA = ltA[li].split(":"), mnA = parseInt(pA[0], 10) * 60 + parseInt(pA[1], 10);
+      if (mnA + 45 > minA){ odL = li + 1; break; } /* pierwsza lekcja, której okno zawiera tę godzinę */
+    }
+    if (odL == null) odL = ltA.length;
+  } else if (mOd) odL = parseInt(mOd[1], 10);
+  if (mDo) doL = parseInt(mDo[1], 10);
+  function rng(from, to){ for (var i = from; i <= to; i++) if (out.blocked.indexOf(i) < 0) out.blocked.push(i); }
+  if (wolny && odL != null){ rng(odL, NH); return out; }              /* „Wolny (od 5L)" → blokada 5-8 */
+  if (odL != null && doL != null){ rng(1, odL - 1); rng(doL + 1, NH); return out; } /* „od 5 do 8" → dostępny 5-8 */
+  if (odL != null){ rng(1, odL - 1); return out; }                     /* „od 5" → dostępny od 5. lekcji */
+  if (doL != null){ rng(doL + 1, NH); return out; }                    /* „do 7" → dostępny do 7. lekcji */
+  if (nums.length){ out.blocked = nums; return out; }                  /* gołe liczby = „wolny wtedy" (konwencja Roberta) */
+  out.unclear = true; return out;
+}
+function parseAvailSheet(tsv){
+  var lines = String(tsv || "").split(/\r?\n/);
+  var i0 = -1;
+  for (var i = 0; i < lines.length; i++) if (/#sheet:.*dyspozycyj/i.test(lines[i])){ i0 = i; break; }
+  if (i0 < 0) return null;
+  var rows = [], seen = {};
+  for (var j = i0 + 1; j < lines.length; j++){
+    if (/#sheet:/.test(lines[j])) break;
+    var c = lines[j].split("\t");
+    if (c.length < 6) continue;
+    var nm = c[0].trim();
+    if (!nm || /^nauczyciel$/i.test(nm)) continue;
+    var days = [], any = false;
+    for (var d = 0; d < 5; d++){
+      var sp = parseDaySpec(c[d + 1]);
+      if (sp.raw !== "—") any = true;
+      days.push(sp);
+    }
+    if (!any) continue;
+    var key = nm.replace(/\s*\(.*?\)\s*$/, "").trim().toLowerCase();
+    if (seen[key]) rows[rows.indexOf(seen[key])] = null; /* nowszy wpis (np. „aktualizacja") nadpisuje starszy */
+    var row = { name: nm, nameClean: nm.replace(/\s*\(.*?\)\s*$/, "").trim(), days: days, note: (c[6] || "").trim(), tid: "", on: true };
+    seen[key] = row; rows.push(row);
+  }
+  return rows.filter(function(r){ return r; });
+}
+function parseDaySpecText(spec){ /* pola tekstowego: wszystko opisuje NIEDOSTĘPNOŚĆ */
+  var s = String(spec || "").trim().toLowerCase().replace(/\s+/g, " ");
+  if (!s) return null;
+  var out = [];
+  function rng(a, b){ for (var i = a; i <= b; i++) if (out.indexOf(i) < 0) out.push(i); }
+  if (s === "-" || /^cał/.test(s) || /cały|całe|cała/.test(s)){ rng(1, NH); return out; } /* „cały" = cały dzień zablokowany */
+  var mOdDo = s.match(/od\s*(\d+)\s*(?:do|-|–)\s*(\d+)/);
+  var mOd = s.match(/od\s*(\d+)/);
+  var mDo = s.match(/do\s*(\d+)/);
+  if (mOdDo){ rng(Math.max(1, +mOdDo[1]), Math.min(NH, +mOdDo[2])); return out; } /* „od 6 do 8" = wolny 6-8 */
+  if (mOd){ rng(Math.max(1, +mOd[1]), NH); return out; }                    /* „od 6" = wolny od 6. do końca */
+  if (mDo){ rng(1, Math.min(NH, +mDo[1])); return out; }                    /* „do 3" = wolny lekcje 1-3 */
+  var re = /(\d+)(?:\s*[-–]\s*(\d+))?/g, m;
+  while ((m = re.exec(s))){ var a = parseInt(m[1], 10), b = m[2] != null ? parseInt(m[2], 10) : a; if (a >= 1 && a <= NH && b >= a && b <= NH) rng(a, b); }
+  return out.length ? out : null;
+}
+function parseAvailText(str){
+  var slots = [], skipped = [];
+  String(str || "").split(/[;\n]/).forEach(function(chunk){
+    var c = chunk.trim();
+    if (!c) return;
+    var mD = c.match(/pn|pon|wt|wto|śr|sr|sro|cz|czw|czwt|pt|pi[ąa]/i);
+    if (!mD){ skipped.push(c); return; }
+    var d = -1, dl = mD[0].toLowerCase();
+    if (dl === "pn" || dl === "pon") d = 0;
+    else if (dl === "wt" || dl === "wto") d = 1;
+    else if (dl === "śr" || dl === "sr" || dl === "sro") d = 2;
+    else if (dl === "cz" || dl === "czw" || dl === "czwt") d = 3;
+    else if (dl === "pt" || dl.indexOf("pi") === 0) d = 4;
+    var spec = c.replace(mD[0], " ").trim();
+    var hrs = parseDaySpecText(spec);
+    if (!hrs || d < 0){ skipped.push(c); return; }
+    hrs.forEach(function(n){ slots.push(d * NH + (n - 1)); });
+  });
+  return { slots: slots, skipped: skipped };
+}
+function teacherHoursMap(){
+  var h = {};
+  S.activities.forEach(function(a){ if (a.teacherId) h[a.teacherId] = (h[a.teacherId] || 0) + a.hours; });
+  return h;
+}
+function availCheck(r, hoursById){ /* kontrola krzyżowa: wolne sloty vs godziny przydziału */
+  var blockedN = 0, unsure = [];
+  r.days.forEach(function(sp, d){
+    blockedN += sp.blocked.length;
+    if (sp.uncertain) unsure.push(DAYS[d] + ": „-” — czy na pewno nieobecny?");
+    if (sp.unclear) unsure.push(DAYS[d] + ": nie rozumiem „" + sp.raw + "”");
+  });
+  if (!r.tid) return { level: 1, msg: "🟡 nie rozpoznany nauczyciel — wybierz z listy" + (unsure.length ? "; " + unsure.join(", ") : ""), blockedN: blockedN };
+  var hrs = hoursById[r.tid] || 0, availSlots = 5 * NH - blockedN;
+  if (availSlots < hrs) return { level: 2, msg: "🔴 zostaje " + availSlots + " wolnych slotów, a przydział to " + hrs + " h — sprawdź wpis" + (unsure.length ? "; " + unsure.join(", ") : ""), blockedN: blockedN };
+  if (unsure.length) return { level: 1, msg: "🟡 " + unsure.join(", "), blockedN: blockedN };
+  return { level: 0, msg: "✅", blockedN: blockedN };
+}
+function availFileRead(input){
+  var f = input.files && input.files[0]; if (!f) return;
+  var name = f.name.toLowerCase();
+  f.arrayBuffer().then(function(buf){
+    try{
+      var tsv;
+      if (name.slice(-5) === ".docx") tsv = docxToTsv(zipRead(buf));
+      else if (name.slice(-5) === ".xlsx") tsv = xlsxToTsv(zipRead(buf));
+      else tsv = new TextDecoder("utf-8").decode(buf);
+      var r = parseAvailSheet(tsv);
+      if (!r || !r.length){ availRows = null; flash("⚠️ Nie znaleziono arkusza „Dyspozycyjność” w tym pliku.", "warn"); render(); return; }
+      availRows = r;
+      flash("Rozpoznano dostępności: " + r.length + " wierszy — sprawdź podgląd poniżej i kliknij „Zastosuj zaznaczonych”.", "ok");
+      render();
+    }catch(e){ flash("⚠️ Nie udało się odczytać pliku.", "err"); }
+  });
+}
+function availSetT(i, v){ if (availRows && availRows[i]){ availRows[i].tid = v; render(); } }
+function availChk(i, v){ if (availRows && availRows[i]){ availRows[i].on = v; render(); } }
+function applyAvailImport(){
+  if (!availRows) return;
+  var applied = 0, skipped = 0, cleared = 0;
+  availRows.forEach(function(r){
+    if (!r.on){ skipped++; return; }
+    var t = null; S.teachers.forEach(function(x){ if (x.id === r.tid) t = x; });
+    if (!t){ skipped++; return; }
+    var slots = [];
+    r.days.forEach(function(sp, d){ sp.blocked.forEach(function(n){ var s2 = d * NH + (n - 1); if (slots.indexOf(s2) < 0) slots.push(s2); }); });
+    t.unavail = slots;
+    lessons().forEach(function(L){ if (S.placement[L.id] != null && slots.indexOf(S.placement[L.id]) >= 0 && L.teacherId === t.id){ delete S.placement[L.id]; cleared++; } });
+    applied++;
+  });
+  save(); render();
+  flash("✅ Blokady zastosowane dla " + applied + " nauczycieli" + (cleared ? " — " + cleared + " lekcja(e) wróciły do nieprzypisanych" : "") + (skipped ? " (pominięto: " + skipped + ")" : "") + ".", "ok");
+}
+function applyAvailText(){
+  var t = null; S.teachers.forEach(function(x){ if (x.id === ogrT) t = x; });
+  if (!t) return;
+  var elx = document.getElementById("availTxt");
+  var res = parseAvailText(elx ? elx.value : "");
+  if (!res.slots.length && res.skipped.length){ flash("⚠️ Nie zrozumiałem: " + res.skipped.slice(0, 3).join("; ") + ". Przykład: pn 7,8; wt 6-8; śr cały; pt od 6.", "err"); return; }
+  if (!res.slots.length){ flash("⚠️ Puste pole — wpisz np. „pn 7,8; wt 6-8”.", "warn"); return; }
+  t.unavail = res.slots;
+  var cleared = 0;
+  lessons().forEach(function(L){ if (S.placement[L.id] != null && res.slots.indexOf(S.placement[L.id]) >= 0 && L.teacherId === t.id){ delete S.placement[L.id]; cleared++; } });
+  save(); render();
+  flash("✅ Blokady dla " + t.name + " ustawione (" + res.slots.length + " godzin)" + (res.skipped.length ? "; pominięto: " + res.skipped.join("; ") : "") + (cleared ? " — " + cleared + " lekcja(e) wróciły do nieprzypisanych." : "."), "ok");
+}
 function doImport(){
   if (!importRows) return;
   var rows = importRows.filter(function(r){ return r.status !== "err" && r.className; });
@@ -1942,6 +2108,28 @@ function renderOgr(){
       h += "</tr>";
     }
     h += "</table></div>";
+    h += '<div class="row" style="flex-wrap:wrap;margin-top:10px"><span class="lbl" style="min-width:100%">⌨️ Szybkie wpisywanie blokad (jedna linijka zamiast klikania):</span><input class="inp" id="availTxt" style="flex:1;min-width:220px" placeholder="np. pn 7,8; wt 6-8; śr cały; czw od 6; pt do 3"><button class="btn" style="margin-left:8px" onclick="applyAvailText()">Zastosuj</button></div>';
+    h += '<p class="hint">Liczby = niedostępne lekcje („7,8”). „cały” albo „-” = cały dzień. „od 6” = wolny od 6. lekcji do końca. „do 3” = wolny lekcje 1-3. Zapis zastępuje całą siatkę tego nauczyciela; zajęte wtedy godziny wrócą do nieprzypisanych.</p>';
+  }
+  h += "</div></div>";
+  h += '<div class="card"><div class="hd">📅 Dostępności z pliku (masowo)</div><div class="bd">';
+  h += '<p class="hint">Wczytaj plik przydziałów (.xlsx / .docx / .csv — np. „Skorygowane wersja ostateczna”): apka odczyta arkusz „Dyspozycyjność” i przygotuje blokady do zatwierdzenia. Konwencja arkusza: gołe liczby = wolny wtedy, „cały” = dostępny, „od/do N” = dostępny od/do N. lekcji, „-” = prawdopodobnie nieobecny (do potwierdzenia). Plik zostaje tylko w tej przeglądarce.</p>';
+  h += '<div class="row"><input type="file" class="inp" accept=".xlsx,.csv,.tsv,.txt,.docx" onchange="availFileRead(this)"></div>';
+  if (availRows && availRows.length){
+    var hM = teacherHoursMap();
+    h += '<div style="overflow-x:auto"><table class="imp"><tr><th></th><th>Nauczyciel</th><th>Blokady (lekcje 1-8)</th><th>Kontrola</th></tr>';
+    availRows.forEach(function(r, ri){
+      var mt = null; S.teachers.forEach(function(x){ if (!r.tid && samePerson(x.name, r.nameClean)) mt = x; });
+      if (!r.tid && mt) r.tid = mt.id;
+      var chk = availCheck(r, hM);
+      var daysStr = r.days.map(function(sp, d){ return DAYS[d].slice(0, 2) + (sp.blocked.length ? "✕" + sp.blocked.join(",") : "·"); }).join(" ");
+      h += '<tr><td><input type="checkbox"' + (r.on ? " checked" : "") + ' onchange="availChk(' + ri + ', this.checked)"></td>';
+      h += '<td><select class="inp" onchange="availSetT(' + ri + ', this.value)">' + (r.tid ? opts(S.teachers, r.tid) : '<option value="">— wybierz —</option>' + opts(S.teachers, "")) + '</select>';
+      if (r.note) h += '<br><span class="sub">' + esc(r.note.slice(0, 60)) + "</span>";
+      h += '</td><td style="font-size:11px;white-space:nowrap">' + daysStr + '</td><td style="font-size:11px">' + chk.msg + "</td></tr>";
+    });
+    h += "</table></div>";
+    h += '<div class="row" style="margin-top:8px"><button class="btn" onclick="applyAvailImport()">✅ Zastosuj zaznaczonych</button><span class="hint" style="margin:0">Zastępuje siatki niedostępności wybranych nauczycieli.</span></div>';
   }
   h += "</div></div>";
   h += '<div class="card"><div class="hd">🚌 Blokady oddziału — np. przewozy, dojazdy (kliknij godzinę, żeby zablokować)</div><div class="bd">';
