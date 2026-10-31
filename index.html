@@ -1149,10 +1149,15 @@ function findViolations(ls, teachers, classes, placement, settings){
   ls.forEach(function(Lr){ var sr = placement[Lr.id]; if (sr == null) return; var rr = effRoomId(Lr); if (!rr) return; var k = rr + "|" + sr; (byRoomSlot[k] = byRoomSlot[k] || []).push(Lr); });
   for (var rk in byRoomSlot){
     var rlist = byRoomSlot[rk], rslot = +rk.split("|")[1], rd = Math.floor(rslot / NH), rh = rslot % NH;
-    var clsSet = {};
-    rlist.forEach(function(Lr){ Lr.classIds.forEach(function(cc){ clsSet[cc] = true; }); });
-    var nCls = Object.keys(clsSet).length;
-    if (nCls > 1) errs.push("Sala " + roomName(rk.split("|")[0]) + " zajęta przez " + nCls + " klasy naraz (" + DAYS[rd] + ", godz. " + (rh + 1) + ")");
+    var bad = false;
+    for (var ri = 0; ri < rlist.length && !bad; ri++){
+      for (var rj = ri + 1; rj < rlist.length && !bad; rj++){
+        var shR = false;
+        for (var rc = 0; rc < rlist[ri].classIds.length; rc++){ if (rlist[rj].classIds.indexOf(rlist[ri].classIds[rc]) >= 0){ shR = true; break; } }
+        if (!shR) bad = true;
+      }
+    }
+    if (bad) errs.push("Sala " + roomName(rk.split("|")[0]) + " zajęta przez różne klasy naraz (" + DAYS[rd] + ", godz. " + (rh + 1) + ")");
   }
   for (var tk in loadT) for (var dd = 0; dd < 5; dd++) if (loadT[tk][dd] > settings.teacherMaxPerDay) errs.push(tNm(tk) + " ma " + loadT[tk][dd] + " lekcji w " + DAYS[dd] + " (limit " + settings.teacherMaxPerDay + ")");
   for (var ck in loadC) for (var dc = 0; dc < 5; dc++) if (loadC[ck][dc] > settings.classMaxPerDay) errs.push("Klasa " + cNm(ck) + " ma " + loadC[ck][dc] + " lekcji w " + DAYS[dc] + " (limit " + settings.classMaxPerDay + ")");
