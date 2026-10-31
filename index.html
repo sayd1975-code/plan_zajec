@@ -225,8 +225,10 @@ function normalize(p){
   if (p.settings.wPair == null) p.settings.wPair = 120;
   if (p.settings.classMaxGapsPerDay == null) p.settings.classMaxGapsPerDay = 1;
   if (p.settings.wClassGapDay == null) p.settings.wClassGapDay = 150;
-  p.classes.forEach(function(c){ if (c.rew == null) c.rew = rewFromName(c.name); if (!Array.isArray(c.blocked)) c.blocked = []; });
-  p.activities.forEach(function(a){ if (a.group == null) a.group = ""; if (a.withClassId == null) a.withClassId = ""; if (a.link == null) a.link = ""; });
+  if (!Array.isArray(p.rooms)) p.rooms = [];
+  p.rooms.forEach(function(r){ if (r.id == null) r.id = ""; if (r.name == null) r.name = ""; });
+  p.classes.forEach(function(c){ if (c.rew == null) c.rew = rewFromName(c.name); if (!Array.isArray(c.blocked)) c.blocked = []; if (c.roomId == null) c.roomId = ""; });
+  p.activities.forEach(function(a){ if (a.group == null) a.group = ""; if (a.withClassId == null) a.withClassId = ""; if (a.link == null) a.link = ""; if (a.roomId == null) a.roomId = ""; });
   if (!p.placement) p.placement = {};
   /* v6.31: sanacja placement — slot spoza zakresu 0..5*NH-1 (np. z ręcznie edytowanej kopii .json) rozbijał findViolations/renderPlan/softPenalty */
   Object.keys(p.placement).forEach(function(k){ var sv = p.placement[k]; if (typeof sv !== "number" || !isFinite(sv) || sv < 0 || sv >= 5 * NH || Math.floor(sv) !== sv) delete p.placement[k]; });
@@ -282,7 +284,7 @@ function classClash(lk, ok, lg, og){
 }
 function buildLessons(acts){
   var out = [];
-  for (var a of acts){ for (var i = 0; i < a.hours; i++) out.push({ id: a.id + "-" + i, activityId: a.id, classId: a.classId, classIds: [a.classId].concat(a.withClassId ? [a.withClassId] : []), teacherId: a.teacherId, subject: a.subject, kind: kindOf(a), group: a.group || "", link: a.link || "" }); }
+  for (var a of acts){ for (var i = 0; i < a.hours; i++) out.push({ id: a.id + "-" + i, activityId: a.id, classId: a.classId, classIds: [a.classId].concat(a.withClassId ? [a.withClassId] : []), teacherId: a.teacherId, subject: a.subject, kind: kindOf(a), group: a.group || "", link: a.link || "", roomId: a.roomId || "" }); }
   return out;
 }
 function lessons(){ return buildLessons(S.activities); }
@@ -299,6 +301,7 @@ function sps7State(){
   var rew =   [2,     2,       2,          2,      2,      1,       2,       1,       3,      2,      3,      3,    1,      3,    1];
   return {
     teachers: [],
+    rooms: [],
     classes: names.map(function(n, i){ return { id: "c" + (i + 1), name: n, rew: rew[i], blocked: [] }; }),
     activities: [],
     placement: {},
@@ -314,6 +317,7 @@ function demoState(){
   function T(id, name, short, un){ return { id: id, name: name, short: short, unavail: un || [] }; }
   function A(id, cid, subj, tid, h){ return { id: id, classId: cid, subject: subj, teacherId: tid, hours: h }; }
   return {
+    rooms: [{ id: "r1", name: "Gabinet logopedy" }, { id: "r2", name: "Gabinet psychologa" }, { id: "r3", name: "Sala gimnastyczna" }],
     teachers: [T("t1","Anna Kowalska","Kow"),T("t2","Maria Nowak","Now"),T("t3","Jan Wiśniewski","Wiś"),T("t4","Krystyna Zielińska","Zie"),T("t5","Barbara Lis","Lis"),T("t6","Piotr Malinowski","Mal"),T("t7","Agnieszka Kaczmarek","Kcz"),T("t8","Tomasz Bąk","Bąk",[0,1,2,3,4,5,6,7]),T("t9","ks. Tadeusz Dąbrowski","Dąb",[37,38,39]),T("t10","Iwona Lewandowska","Lew"),T("t11","Stanisław Woźniak","Woź")],
     classes: [{id:"c1",name:"1a"},{id:"c2",name:"1b"},{id:"c3",name:"2a"},{id:"c4",name:"2b"},{id:"c5",name:"3a"},{id:"c6",name:"3b"}],
     activities: [A("a1","c1","Edukacja wczesnoszkolna","t1",15),A("a2","c1","Rewalidacja","t10",2),A("a3","c1","Religia","t9",2),A("a4","c1","WF","t8",3),A("a5","c2","Edukacja wczesnoszkolna","t2",15),A("a6","c2","Rewalidacja","t10",2),A("a7","c2","Religia","t9",2),A("a8","c2","WF","t8",3),A("a9","c3","Edukacja wczesnoszkolna","t3",15),A("a10","c3","Rewalidacja","t11",2),A("a11","c3","Religia","t9",2),A("a12","c3","WF","t8",3),A("a13","c4","Edukacja wczesnoszkolna","t4",15),A("a14","c4","Rewalidacja","t11",2),A("a15","c4","Religia","t9",2),A("a16","c4","WF","t8",3),A("a17","c5","J. polski","t5",5),A("a18","c5","Matematyka","t6",5),A("a19","c5","Przyroda","t5",2),A("a20","c5","Informatyka","t11",1),A("a21","c5","Plastyka","t7",1),A("a22","c5","Technika","t7",1),A("a23","c5","Muzyka","t7",1),A("a24","c5","WF","t8",3),A("a25","c5","Religia","t9",2),A("a26","c5","Rewalidacja","t10",2),A("a27","c6","J. polski","t5",5),A("a28","c6","Matematyka","t6",5),A("a29","c6","Przyroda","t5",2),A("a30","c6","Informatyka","t11",1),A("a31","c6","Plastyka","t7",1),A("a32","c6","Technika","t7",1),A("a33","c6","Muzyka","t7",1),A("a34","c6","WF","t8",3),A("a35","c6","Religia","t9",2),A("a36","c6","Rewalidacja","t11",2)],
