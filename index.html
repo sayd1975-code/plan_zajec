@@ -296,7 +296,7 @@ function buildLessons(acts){
   for (var a of acts){ for (var i = 0; i < a.hours; i++) out.push({ id: a.id + "-" + i, activityId: a.id, classId: a.classId, classIds: [a.classId].concat(a.withClassId ? [a.withClassId] : []), teacherId: a.teacherId, subject: a.subject, kind: kindOf(a), group: a.group || "", link: a.link || "", roomId: a.roomId || "", studentId: a.studentId || "", week: a.week || "" }); }
   return out;
 }
-function lessons(){ return buildLessons(S.activities); }
+function lessons(wk){ return buildLessons(S.activities.filter(function(a){ return weekMatch({ week: a.week }, wk); })); } /* v6.35: opcjonalny tydzień A/B */
 function tById(){ var m = {}; S.teachers.forEach(function(t){ m[t.id] = t; }); return m; }
 function cById(){ var m = {}; S.classes.forEach(function(c){ m[c.id] = c; }); return m; }
 function tName(id){ var t = tById()[id]; return t ? t.name : (id ? "?" : "—"); }
@@ -2758,7 +2758,7 @@ function setViewMode(v){ viewMode = v; sel = null; viewSel = ""; render(); }
 function setViewSel(v){ viewSel = v; sel = null; render(); }
 function chipClick(id){ sel = (sel === id ? null : id); render(); }
 function runAuto(){
-  var ls = lessons();
+  var ls = lessons(planWeek);
   if (!ls.length){ flash("Najpierw dodaj oddziały, nauczycieli i zajęcia w zakładce Dane.", "warn"); return; }
   var res = autoSchedule(ls, S.teachers, S.classes, S.settings, 25);
   S.placement = res.placement; sel = null; save(); render();
@@ -2804,8 +2804,9 @@ function unassign(id, ev){
   save(); render();
   flash(L0 && L0.link ? "Powiązane lekcje wróciły do nieprzypisanych." : "Lekcja wróciła do nieprzypisanych.", "ok");
 }
+var planWeek = "A"; /* v6.35: aktywny tydzień w widoku planu */
 function renderPlan(){
-  var ls = lessons(), placement = S.placement;
+  var ls = lessons(planWeek), placement = S.placement;
   var unplaced = ls.filter(function(l){ return placement[l.id] == null; });
   var placed = ls.length - unplaced.length;
   var allStudents = [];
@@ -2820,6 +2821,7 @@ function renderPlan(){
   var eff = ents.some(function(e){ return e.id === viewSel; }) ? viewSel : ents[0].id;
   viewSel = eff;
   h += '<select class="inp" onchange="setViewSel(this.value)">' + ents.map(function(e){ return '<option value="' + e.id + '"' + (e.id === eff ? " selected" : "") + ">" + esc(e.name) + "</option>"; }).join("") + "</select>";
+  if (S.settings.weekAB){ h += '<select class="inp" onchange="planWeek=this.value;render()"><option value="A"' + (planWeek === "A" ? " selected" : "") + '>Tydzień A</option><option value="B"' + (planWeek === "B" ? " selected" : "") + '>Tydzień B</option></select>'; } /* v6.35 */
   h += '<button class="btn" onclick="runAuto()">🪄 Wygeneruj automatycznie</button>';
   h += '<button class="btn2" onclick="confirmClick(\'plan\',clearPlan)">' + (confirmKey === "plan" ? "Na pewno wyczyścić?" : "🧹 Wyczyść plan") + "</button>";
   h += '<button class="btn2" onclick="checkRules()">✅ Sprawdź zasady</button>';
