@@ -170,7 +170,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.33.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.34.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -229,6 +229,14 @@ function normalize(p){
   p.rooms.forEach(function(r){ if (r.id == null) r.id = ""; if (r.name == null) r.name = ""; });
   p.classes.forEach(function(c){ if (c.rew == null) c.rew = rewFromName(c.name); if (!Array.isArray(c.blocked)) c.blocked = []; if (c.roomId == null) c.roomId = ""; if (!Array.isArray(c.students)) c.students = []; }); /* v6.33: uczniowie w oddziale */
   p.activities.forEach(function(a){ if (a.group == null) a.group = ""; if (a.withClassId == null) a.withClassId = ""; if (a.link == null) a.link = ""; if (a.roomId == null) a.roomId = ""; if (a.studentId == null) a.studentId = ""; }); /* v6.33: zajęcia 1:1 do ucznia */
+  if (!Array.isArray(p.duties)) p.duties = []; /* v6.34: dyżury — { id, name, slotsPerWeek } */
+  p.duties.forEach(function(d){ if (d.id == null) d.id = ""; if (d.name == null) d.name = ""; if (d.slotsPerWeek == null) d.slotsPerWeek = 1; });
+  if (!p.dutyPlacement) p.dutyPlacement = {}; /* v6.34: dutyId -> slot */
+  Object.keys(p.dutyPlacement).forEach(function(k){ var sv = p.dutyPlacement[k]; if (typeof sv !== "number" || !isFinite(sv) || sv < 0 || sv >= 5 * NH || Math.floor(sv) !== sv) delete p.dutyPlacement[k]; });
+  if (!Array.isArray(p.duties)) p.duties = []; /* v6.34: dyżury — { id, name, slotsPerWeek } */
+  p.duties.forEach(function(d){ if (d.id == null) d.id = ""; if (d.name == null) d.name = ""; if (d.slotsPerWeek == null) d.slotsPerWeek = 1; });
+  if (!p.dutyPlacement) p.dutyPlacement = {}; /* v6.34: dutyId -> [slot,...] */
+  Object.keys(p.dutyPlacement).forEach(function(k){ var arr = p.dutyPlacement[k]; if (!Array.isArray(arr)) delete p.dutyPlacement[k]; else p.dutyPlacement[k] = arr.filter(function(sv){ return typeof sv === "number" && isFinite(sv) && sv >= 0 && sv < 5 * NH && Math.floor(sv) === sv; }); });
   if (!p.placement) p.placement = {};
   /* v6.31: sanacja placement — slot spoza zakresu 0..5*NH-1 (np. z ręcznie edytowanej kopii .json) rozbijał findViolations/renderPlan/softPenalty */
   Object.keys(p.placement).forEach(function(k){ var sv = p.placement[k]; if (typeof sv !== "number" || !isFinite(sv) || sv < 0 || sv >= 5 * NH || Math.floor(sv) !== sv) delete p.placement[k]; });
@@ -302,6 +310,10 @@ function sps7State(){
   return {
     teachers: [],
     rooms: [],
+    duties: [{ id: "d1", name: "Dyżur przy wejściu", slotsPerWeek: 5 }, { id: "d2", name: "Dyżur na korytarzu", slotsPerWeek: 5 }],
+    dutyPlacement: {},
+    duties: [{ id: "d1", name: "Dyżur przy wejściu", slotsPerWeek: 5 }, { id: "d2", name: "Dyżur na korytarzu", slotsPerWeek: 5 }],
+    dutyPlacement: {},
     classes: names.map(function(n, i){ return { id: "c" + (i + 1), name: n, rew: rew[i], blocked: [] }; }),
     activities: [],
     placement: {},
@@ -1151,6 +1163,10 @@ function findViolations(ls, teachers, classes, placement, settings){
     var tracks = rewTracksOf(cM[cid]);
     if (rewN > tracks) errs.push("Klasa " + cNm(cid) + ": " + rewN + " zajęć rewalidacji naraz, a torów: " + tracks + " (" + DAYS[dd] + ", godz. " + (hh + 1) + ")");
   }
+  /* v6.34: dyżury — max 1 na slot, limit slotsPerWeek */
+  var dbsV = dutiesBySlot(S.dutyPlacement);
+  for (var dsl in dbsV){ if (dbsV[dsl].length > 1) errs.push("Dwa dyżury naraz: " + dbsV[dsl].map(function(did){ return (dutyById(did) || {}).name || did; }).join(" + ") + " (" + DAYS[Math.floor(+dsl / NH)] + ", godz. " + ((+dsl % NH) + 1) + ")"); }
+  (S.duties || []).forEach(function(dv){ var n = (S.dutyPlacement[dv.id] || []).length; if (n > dv.slotsPerWeek) errs.push("Dyżur „" + dv.name + "” ma " + n + " godzin, a limit to " + dv.slotsPerWeek); });
   /* v6.33: uczeń 1:1 — max 1 lekcja w slocie */
   var byStudentSlot = {};
   ls.forEach(function(Ls){ var ss = placement[Ls.id]; if (ss == null || !Ls.studentId) return; var k2 = Ls.studentId + "|" + ss; (byStudentSlot[k2] = byStudentSlot[k2] || []).push(Ls); });
@@ -1730,6 +1746,10 @@ function flash(text, kind){
 function setTab(t){ tab = t; render(); }
 function effRoomId(L){ return L.roomId || cRoomOf({ classId: L.classIds[0] }); } /* v6.32: sala zajęć, a gdy pusta — sala macierzysta klasy */
 function roomName(rid){ var r = null; (S.rooms || []).forEach(function(x){ if (x.id === rid) r = x; }); return r ? r.name : (rid || '?'); }
+function dutyById(id){ var d = null; (S.duties || []).forEach(function(x){ if (x.id === id) d = x; }); return d; } /* v6.34 */
+function dutiesBySlot(dp){ var m = {}; Object.keys(dp || {}).forEach(function(did){ var sl = dp[did]; if (sl == null) return; (m[sl] = m[sl] || []).push(did); }); return m; } /* v6.34 */
+function dutyById(id){ var d = null; (S.duties || []).forEach(function(x){ if (x.id === id) d = x; }); return d; } /* v6.34 */
+function dutiesBySlot(dp){ var m = {}; Object.keys(dp || {}).forEach(function(did){ (dp[did] || []).forEach(function(sl){ (m[sl] = m[sl] || []).push(did); }); }); return m; } /* v6.34 */
 function studentsOf(cid){ var c = null; S.classes.forEach(function(x){ if (x.id === cid) c = x; }); return c ? (c.students || []) : []; } /* v6.33 */
 function studentName(sid){ for (var i = 0; i < S.classes.length; i++){ var st = (S.classes[i].students || []).filter(function(x){ return x.id === sid; })[0]; if (st) return st.name + ' (' + S.classes[i].name + ')'; } return sid || '?'; }
 function cRoomOf(a){ var c = null; S.classes.forEach(function(x){ if (x.id === a.classId) c = x; }); return c ? (c.roomId || '') : ''; } /* v6.32: sala macierzysta klasy zajęć */
@@ -1831,6 +1851,68 @@ function renderDane(){
   });
   h += '<div class="row"><input id="newRoomName" class="inp" style="flex:1" placeholder="np. Gabinet logopedy"><button class="btn" onclick="addRoom()">+ Dodaj</button></div>';
   h += "</div></div></div>";
+  h += '<div class="card"><div class="hd">🚨 Dyżury <span class="hint" style="font-weight:400">— kliknij „Rozłóż automatycznie”, potem klikaj komórki siatki poniżej; dyżur nie może kolidować z lekcją ani innym dyżurem</span></div><div class="bd">';
+  if (!(S.duties || []).length) h += '<p class="hint">Brak dyżurów — dodaj pierwszy.</p>';
+  (S.duties || []).forEach(function(d){
+    var used = (S.dutyPlacement[d.id] || []).length;
+    h += '<div class="row"><input class="inp" style="flex:1" value="' + esc(d.name) + '" onchange="renDuty(\'' + d.id + '\',this.value)">'
+       + '<input class="inp" type="number" min="1" max="40" style="width:56px;text-align:center" title="ile godzin tygodniowo" value="' + d.slotsPerWeek + '" onchange="setDutySlots(\'' + d.id + '\',this.value)">'
+       + '<span class="badge">' + used + '/' + d.slotsPerWeek + '</span>'
+       + '<button class="del" title="Usuń dyżur" onclick="delDuty(\'' + d.id + '\')">✕</button></div>';
+  });
+  h += '<div class="row"><input id="newDutyName" class="inp" style="flex:1" placeholder="np. Dyżur przy wejściu"><input id="newDutySlots" class="inp" type="number" min="1" max="40" style="width:56px;text-align:center" value="5" title="godzin tygodniowo"><button class="btn" onclick="addDuty()">+ Dodaj</button>'
+     + '<button class="btn2" onclick="autoDuties()">🧭 Rozłóż automatycznie</button></div>';
+  if ((S.duties || []).length){
+    var dbs = dutiesBySlot(S.dutyPlacement);
+    var lt2 = lessonTimes();
+    h += '<div style="overflow-x:auto;margin-top:8px"><table class="plan"><tr><th>dyżur</th>';
+    for (var dd = 0; dd < 5; dd++) for (var hh = 0; hh < NH; hh++) h += "<th style='min-width:34px'>" + ["Pn","Wt","Śr","Cz","Pt"][dd] + (hh + 1) + "</th>";
+    h += "</tr>";
+    (S.duties || []).forEach(function(d){
+      h += '<tr><td class="day" style="white-space:nowrap">' + esc(d.name) + '</td>';
+      for (var sl = 0; sl < 5 * NH; sl++){
+        var on = (dbs[sl] || []).indexOf(d.id) >= 0;
+        var bl2 = S.settings.blockedSlots.indexOf(sl) >= 0;
+        var lessonHere = (lessonsBySlot(lessons(), S.placement)[sl] || []).length > 0;
+        h += '<td onclick="dutyClick(\'' + d.id + '\',' + sl + ')" style="' + (on ? 'background:#fde68a;font-weight:700' : '') + (bl2 || lessonHere ? ';background:repeating-linear-gradient(45deg,transparent,transparent 4px,rgba(148,163,184,.25) 4px,rgba(148,163,184,.25) 8px)' : '') + '" title="' + DAYS[Math.floor(sl / NH)] + ' lek. ' + ((sl % NH) + 1) + ' ' + esc(lt2[sl % NH]) + (lessonHere ? ' — jest lekcja' : '') + '">' + (on ? '✓' : '') + '</td>';
+      }
+      h += '</tr>';
+    });
+    h += '</table></div>';
+    h += '<p class="hint">Żółte ✓ = dyżur w tej godzinie. Szare prążki = godzina zablokowana lub zajęta lekcją (nie można tam dyżuru). Kliknięcie przełącza.</p>';
+  }
+  h += "</div></div>";
+  h += '<div class="card"><div class="hd">🚨 Dyżury <span class="hint" style="font-weight:400">— „Rozłóż automatycznie”, potem klikaj komórki siatki; dyżur nie może kolidować z lekcją ani innym dyżurem</span></div><div class="bd">';
+  if (!(S.duties || []).length) h += '<p class="hint">Brak dyżurów — dodaj pierwszy.</p>';
+  (S.duties || []).forEach(function(d){
+    var used = (S.dutyPlacement[d.id] || []).length;
+    h += '<div class="row"><input class="inp" style="flex:1" value="' + esc(d.name) + '" onchange="renDuty(\'' + d.id + '\',this.value)">'
+       + '<input class="inp" type="number" min="1" max="40" style="width:56px;text-align:center" title="ile godzin tygodniowo" value="' + d.slotsPerWeek + '" onchange="setDutySlots(\'' + d.id + '\',this.value)">'
+       + '<span class="badge">' + used + '/' + d.slotsPerWeek + '</span>'
+       + '<button class="del" title="Usuń" onclick="delDuty(\'' + d.id + '\')">✕</button></div>';
+  });
+  h += '<div class="row"><input id="newDutyName" class="inp" style="flex:1" placeholder="np. Dyżur przy wejściu"><input id="newDutySlots" class="inp" type="number" min="1" max="40" style="width:56px;text-align:center" value="5" title="godzin tygodniowo"><button class="btn" onclick="addDuty()">+ Dodaj</button>'
+     + '<button class="btn2" onclick="autoDuties()">🧭 Rozłóż automatycznie</button></div>';
+  if ((S.duties || []).length){
+    var dbs = dutiesBySlot(S.dutyPlacement);
+    var lt2 = lessonTimes();
+    h += '<div style="overflow-x:auto;margin-top:8px"><table class="plan"><tr><th>dyżur</th>';
+    for (var dd = 0; dd < 5; dd++) for (var hh = 0; hh < NH; hh++) h += "<th style='min-width:34px'>" + ["Pn","Wt","Śr","Cz","Pt"][dd] + (hh + 1) + "</th>";
+    h += "</tr>";
+    (S.duties || []).forEach(function(d){
+      h += '<tr><td class="day" style="white-space:nowrap">' + esc(d.name) + '</td>';
+      for (var sl = 0; sl < 5 * NH; sl++){
+        var on = (dbs[sl] || []).indexOf(d.id) >= 0;
+        var bl2 = S.settings.blockedSlots.indexOf(sl) >= 0;
+        var lh = (lessonsBySlot(lessons(), S.placement)[sl] || []).length > 0;
+        h += '<td onclick="dutyClick(\'' + d.id + '\',' + sl + ')" style="' + (on ? 'background:#fde68a;font-weight:700' : '') + (bl2 || lh ? ';background:repeating-linear-gradient(45deg,transparent,transparent 4px,rgba(148,163,184,.25) 4px,rgba(148,163,184,.25) 8px)' : '') + '" title="' + DAYS[Math.floor(sl / NH)] + ' lek. ' + ((sl % NH) + 1) + ' ' + esc(lt2[sl % NH]) + (lh ? ' — jest lekcja' : '') + '">' + (on ? '✓' : '') + '</td>';
+      }
+      h += '</tr>';
+    });
+    h += '</table></div>';
+    h += '<p class="hint">Żółte ✓ = dyżur. Szare prążki = zablokowane/zajęte lekcją. Klik przełącza.</p>';
+  }
+  h += "</div></div>";
   h += '<div class="card"><div class="hd">📚 Zajęcia — kto, co i ile godzin prowadzi w danej klasie</div><div class="bd">';
   if (!S.activities.length) h += '<p class="hint">Brak zajęć — dodaj pierwszy wiersz albo skorzystaj z importu poniżej.</p>';
   S.activities.forEach(function(a){
@@ -1975,6 +2057,49 @@ function delTeacher(id){
   if (viewMode === "teacher" && viewSel === id) viewSel = "";
   if (ogrT === id) ogrT = "";
   save(); render();
+}
+function addDuty(){
+  var el = document.getElementById('newDutyName');
+  var v = el ? el.value.trim() : '';
+  if (!v) return;
+  var sp = parseInt((document.getElementById('newDutySlots') || {}).value, 10);
+  S.duties.push({ id: nextId(S.duties, 'd'), name: v, slotsPerWeek: Math.max(1, Math.min(40, sp || 1)) }); save(); render();
+}
+function renDuty(id, v){ (S.duties || []).forEach(function(d){ if (d.id === id) d.name = v; }); save(); render(); }
+function setDutySlots(id, v){ (S.duties || []).forEach(function(d){ if (d.id === id) d.slotsPerWeek = Math.max(1, Math.min(40, parseInt(v) || 1)); }); save(); render(); }
+function delDuty(id){ S.duties = (S.duties || []).filter(function(d){ return d.id !== id; }); delete S.dutyPlacement[id]; save(); render(); }
+function assignDuty(did, slot){ /* slot=null = usuń wszystkie */
+  var d = dutyById(did); if (!d) return;
+  var dp = S.dutyPlacement || {}; dp[did] = dp[did] || [];
+  if (slot == null){ delete dp[did]; S.dutyPlacement = dp; save(); render(); return; }
+  if (slotBlocked(S.settings, slot)){ flash('Ta godzina jest zablokowana w Ograniczeniach.', 'err'); return; }
+  if ((lessonsBySlot(lessons(), S.placement)[slot] || []).length > 0){ flash('W tej godzinie jest już lekcja — dyżur nakładałby się z zajęciami.', 'err'); return; }
+  var taken = dutiesBySlot(dp);
+  if ((taken[slot] || []).some(function(k){ return k !== did; })){ flash('Inny dyżur jest już na tej godzinie.', 'err'); return; }
+  if (dp[did].indexOf(slot) < 0) dp[did].push(slot);
+  if (dp[did].length > d.slotsPerWeek) dp[did] = dp[did].slice(0, d.slotsPerWeek);
+  S.dutyPlacement = dp; save(); render();
+}
+function dutyClick(did, slot){ var dp = S.dutyPlacement || {}; dp[did] = dp[did] || []; var ix = dp[did].indexOf(slot); if (ix >= 0){ dp[did].splice(ix, 1); if (!dp[did].length) delete dp[did]; } else assignDuty(did, slot); S.dutyPlacement = dp; save(); render(); }
+function autoDuties(){ var dp = {}; var bySlot = lessonsBySlot(lessons(), S.placement); var taken = {};
+  (S.duties || []).forEach(function(d){
+    dp[d.id] = [];
+    for (var i = 0; i < d.slotsPerWeek; i++){
+      var best = null, bestScore = -1;
+      for (var sl = 0; sl < 5 * NH; sl++){
+        if (slotBlocked(S.settings, sl)) continue;
+        if ((bySlot[sl] || []).length > 0) continue;
+        if (taken[sl]) continue;
+        var day = Math.floor(sl / NH);
+        var inDay = dp[d.id].filter(function(x){ return Math.floor(x / NH) === day; }).length;
+        var score = (5 - day) * 100 - inDay * 10 + (sl % NH);
+        if (score > bestScore){ bestScore = score; best = sl; }
+      }
+      if (best != null){ dp[d.id].push(best); taken[best] = true; }
+    }
+  });
+  S.dutyPlacement = dp; save(); render();
+  flash('Rozłożono dyżury automatycznie — klikaj komórki, żeby poprawić ręcznie.', 'ok');
 }
 function addStudent(cid){
   var el = document.getElementById('newStudentName_' + cid);
