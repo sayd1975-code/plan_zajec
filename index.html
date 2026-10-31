@@ -169,7 +169,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.25.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.26.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -1604,7 +1604,9 @@ function xlsxToTsv(files){
   wb.replace(/<sheet[^>]*\/?>/g, function(m){
     var rid = /r:id="([^"]+)"/.exec(m);
     var nm = /name="([^"]*)"/.exec(m);
-    if (rid && relMap[rid[1]]) sheets.push({ path: "xl/" + relMap[rid[1]], name: nm ? nm[1] : "" });
+    if (rid && relMap[rid[1]]) { /* v6.26: rels mogą mieć absolutne Target "/xl/..." (tak zapisuje m.in. openpyxl) — wtedy NIE doklejamy prefiksu "xl/", bo wychodzi "xl/xl/..." i plik wczytuje się jako pusty */
+      var rp = relMap[rid[1]].indexOf("xl/") === 0 ? relMap[rid[1]] : "xl/" + relMap[rid[1]];
+      sheets.push({ path: rp, name: nm ? nm[1] : "" }); }
     return m;
   });
   if (!sheets.length) sheets = Object.keys(files).filter(function(k){ return /^xl\/worksheets\/.*\.xml$/.test(k); }).sort().map(function(p){ return { path: p, name: "" }; });
