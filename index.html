@@ -169,7 +169,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.26.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.27.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -1707,7 +1707,7 @@ function sortedSubjects(){
   return arr;
 }
 function renderTabs(){
-  var tabs = [["dane","📋 Dane"],["ogr","⛔ Ograniczenia"],["plan","🗓️ Plan"],["eks","🖨️ Eksport"]];
+  var tabs = [["dane","📋 Dane"],["ogr","⛔ Ograniczenia"],["plan","🗓️ Plan"],["zast","🔁 Zastępstwa"],["eks","🖨️ Eksport"]]; /* v6.27: nowa zakładka Zastępstwa */
   document.getElementById("tabs").innerHTML = tabs.map(function(t){
     return '<button class="tab' + (tab === t[0] ? " on" : "") + '" onclick="setTab(\'' + t[0] + '\')">' + t[1] + "</button>";
   }).join("");
@@ -1726,6 +1726,7 @@ function render(){
   if (tab === "dane") m.innerHTML = renderDane() + chatHtml();
   else if (tab === "ogr") m.innerHTML = renderOgr() + chatHtml();
   else if (tab === "plan") m.innerHTML = renderPlan() + chatHtml();
+  else if (tab === "zast") m.innerHTML = renderZast() + chatHtml(); /* v6.27 */
   else m.innerHTML = renderEks() + chatHtml();
 }
 
@@ -3208,6 +3209,130 @@ function renderEks(){
   h += "</div></div>";
   return h;
 }
+
+/* ==================== v6.27: ZASTĘPSTWA + SALDO GODZIN ==================== */
+var zastDay = null; /* v6.27: dzień zastępstw — null = auto wg dzisiejszej daty (pn-pt), w weekend poniedziałek; 0..4 = wybrany */
+var zastAbsent = {}; /* v6.27: nieobecni — teacherId -> true */
+
+function zastDayIdx(){
+  if (zastDay != null) return zastDay;
+  var wd = (new Date()).getDay();
+  return (wd >= 1 && wd <= 5) ? wd - 1 : 0;
+}
+function isVacantName(n){ return /^wakat/i.test(String(n || "").trim()); } /* v6.27: fikcyjni "nauczyciele" z wakatów nie mogą przykrywać */
+function zastData(){ /* v6.27: analiza zastępstw dla dnia — wypadające lekcje nieobecnych + kandydaci przykrycia (bez lekcji na tej godzinie, dostępni wg ⛔, nie wakaty) */
+  var di = zastDayIdx();
+  var ls = lessons();
+  var busy = {}, dayLen = {}, inDay = [];
+  ls.forEach(function(L){
+    var s = S.placement[L.id];
+    if (s == null) return;
+    if (Math.floor(s / NH) !== di) return;
+    busy[s] = busy[s] || {}; busy[s][L.teacherId] = true;
+    dayLen[L.teacherId] = (dayLen[L.teacherId] || 0) + 1;
+    inDay.push(L);
+  });
+  var un = {}; S.teachers.forEach(function(t){ var m = {}; (t.unavail || []).forEach(function(s){ m[s] = true; }); un[t.id] = m; });
+  var absent = {}; S.teachers.forEach(function(t){ if (zastAbsent[t.id] && dayLen[t.id]) absent[t.id] = true; });
+  var fall = [];
+  inDay.forEach(function(L){
+    if (!absent[L.teacherId]) return;
+    var s = S.placement[L.id];
+    var cand = S.teachers.filter(function(t){
+      if (absent[t.id] || isVacantName(t.name)) return false;
+      if (busy[s] && busy[s][t.id]) return false;
+      if (un[t.id][s]) return false;
+      return true;
+    });
+    cand.sort(function(a, b){ return (dayLen[a.id] || 0) - (dayLen[b.id] || 0) || tchKeyOf(a).localeCompare(tchKeyOf(b), "pl"); });
+    fall.push({ slot: s, h: s % NH, teacherId: L.teacherId, teacherName: tName(L.teacherId), subject: L.subject, classes: L.classIds.map(cName).join(", "), candidates: cand });
+  });
+  fall.sort(function(a, b){ return a.slot - b.slot; });
+  var byCand = {};
+  fall.forEach(function(f){ f.candidates.forEach(function(t){ if (!byCand[t.id]) byCand[t.id] = { id: t.id, name: t.name, cover: 0 }; byCand[t.id].cover++; }); });
+  var candSum = Object.keys(byCand).map(function(k){ return { id: k, name: byCand[k].name, cover: byCand[k].cover, dayLen: dayLen[k] || 0, free: NH - (dayLen[k] || 0) }; });
+  candSum.sort(function(a, b){ return b.cover - a.cover || tchKeyOf({ name: a.name }).localeCompare(tchKeyOf({ name: b.name }), "pl"); });
+  return { day: di, fall: fall, candSum: candSum, dayLen: dayLen, unplaced: ls.filter(function(L){ return S.placement[L.id] == null; }).length };
+}
+function saldoData(){ /* v6.27: saldo godzin — przydział vs ułożony plan + kontrola Świetlicy + wolne godziny w dniu zastępstw */
+  var di = zastDayIdx();
+  var ls = lessons();
+  var przH = {}, planN = {}, swPrz = {}, swPlan = {}, busyToday = {};
+  S.activities.forEach(function(a){
+    przH[a.teacherId] = (przH[a.teacherId] || 0) + a.hours;
+    if (kindOf(a) === "swietl") swPrz[a.teacherId] = (swPrz[a.teacherId] || 0) + a.hours;
+  });
+  ls.forEach(function(L){
+    var s = S.placement[L.id];
+    if (s == null) return;
+    planN[L.teacherId] = (planN[L.teacherId] || 0) + 1;
+    if (kindL(L) === "swietl") swPlan[L.teacherId] = (swPlan[L.teacherId] || 0) + 1;
+    if (Math.floor(s / NH) === di) busyToday[L.teacherId] = (busyToday[L.teacherId] || 0) + 1;
+  });
+  var rows = sortedTeachers().map(function(t){
+    var prz = przH[t.id] || 0, plan = planN[t.id] || 0;
+    return { id: t.id, name: t.name, prz: prz, plan: plan, unplaced: prz - plan, swPrz: swPrz[t.id] || 0, swPlan: swPlan[t.id] || 0, freeToday: NH - (busyToday[t.id] || 0) };
+  }).filter(function(r){ return r.prz > 0 || r.plan > 0; });
+  var sums = { prz: 0, plan: 0, swPrz: 0, swPlan: 0 };
+  rows.forEach(function(r){ sums.prz += r.prz; sums.plan += r.plan; sums.swPrz += r.swPrz; sums.swPlan += r.swPlan; });
+  return { rows: rows, sums: sums, day: di };
+}
+function renderZast(){ /* v6.27: zakładka Zastępstwa — nieobecni, wypadające lekcje z kandydatami, saldo godzin */
+  var di = zastDayIdx();
+  var zd = zastData();
+  var lt = lessonTimes();
+  var h = '<div class="card"><div class="hd"><span>🔁 Zastępstwa</span><div class="row" style="margin:0">';
+  h += '<select class="inp" onchange="setZastDay(this.value)">';
+  DAYS.forEach(function(dn, i){ h += '<option value="' + i + '"' + (i === di ? " selected" : "") + ">" + dn + "</option>"; });
+  h += '</select><button class="btn2" onclick="zastClear()">Wyczyść zaznaczenia</button></div></div><div class="bd">';
+  h += '<p class="hint">Zaznacz nieobecnych nauczycieli — poniżej pojawią się wypadające lekcje i kto może je przykryć (kandydat: bez lekcji na tej godzinie, dostępny wg ⛔ ogranicczeń; wakaty nie wchodzą na listę). Domyślnie dzień bieżący.</p>';
+  var withLessons = sortedTeachers().filter(function(t){ return (zd.dayLen[t.id] || 0) > 0; });
+  if (!withLessons.length) h += '<p class="hint">W ' + esc(DAYS[di]) + ' nie ma ułożonych lekcji — najpierw ułóż plan w 🗓️ Plan.</p>';
+  withLessons.forEach(function(t){
+    h += '<label class="row" style="cursor:pointer"><input type="checkbox"' + (zastAbsent[t.id] ? " checked" : "") + ' onchange="toggleZastAbsent(\'' + t.id + '\')"><span style="flex:1">' + esc(t.name) + '</span><span class="badge">' + (zd.dayLen[t.id] || 0) + ' lekcji</span></label>';
+  });
+  h += "</div></div>";
+  h += '<div class="card"><div class="hd"><span>❌ Wypadające lekcje — ' + esc(DAYS[di]) + '</span><span class="badge' + (zd.fall.length ? " err" : " ok") + '">' + zd.fall.length + ' do przykrycia</span></div><div class="bd">';
+  if (!zd.fall.length){
+    var any = Object.keys(zastAbsent).length > 0;
+    h += '<p class="hint">' + (any ? "Zaznaczeni nauczyciele nie mają dziś ułożonych lekcji — nic nie wypada." : "Zaznacz nieobecnych powyżej, aby zobaczyć wypadające lekcje.") + "</p>";
+  } else {
+    h += '<div class="prevtbl"><table><tr><th>Lp.</th><th>Godz.</th><th>Klasa</th><th>Zajęcia</th><th>Nieobecny/a</th><th>Kandydaci na zastępstwo (dziś: ile lekcji)</th></tr>';
+    zd.fall.forEach(function(f, i){
+      var cands = f.candidates.slice(0, 4).map(function(t){ return esc(t.name) + ' <span class="badge">' + (zd.dayLen[t.id] || 0) + '</span>'; }).join("<br>");
+      if (f.candidates.length > 4) cands += "<br>…+" + (f.candidates.length - 4);
+      h += '<tr><td>' + (i + 1) + '</td><td>' + (f.h + 1) + ". " + esc(lt[f.h]) + '</td><td>' + esc(f.classes) + '</td><td>' + esc(f.subject) + '</td><td>' + esc(f.teacherName) + '</td><td>' + (cands || '<span class="badge err">brak wolnych</span>') + "</td></tr>";
+    });
+    h += "</table></div>";
+  }
+  if (zd.unplaced) h += '<p class="hint">⚠️ W planie jest ' + zd.unplaced + ' nieprzypisanych lekcji — zastępstwa liczone tylko z lekcji ułożonych.</p>';
+  h += "</div></div>";
+  if (zd.fall.length && zd.candSum.length){
+    h += '<div class="card"><div class="hd"><span>✅ Kto może przykryć</span></div><div class="bd">';
+    h += '<p class="hint">Najpierw ci, którzy przykryją najwięcej wypadających godzin; „wolnych" = godziny bez lekcji w tym dniu.</p>';
+    zd.candSum.forEach(function(c){
+      h += '<div class="row"><span style="flex:1">' + esc(c.name) + '</span><span class="badge ok">przykryje ' + c.cover + ' godz.</span><span class="badge">' + c.free + ' wolnych</span></div>';
+    });
+    h += "</div></div>";
+  }
+  var sd = saldoData();
+  h += '<div class="card"><div class="hd"><span>⚖️ Saldo godzin nauczycieli — przydział vs plan</span></div><div class="bd">';
+  if (!sd.rows.length) h += '<p class="hint">Brak przydziałów — zaimportuj je w 📋 Dane.</p>';
+  else {
+    h += '<div class="prevtbl"><table><tr><th>Nauczyciel</th><th>Przydział h</th><th>W planie</th><th>Nieułożone</th><th>Świetlica prz.</th><th>Świetlica plan</th><th>Wolne dziś</th></tr>';
+    sd.rows.forEach(function(r){
+      h += '<tr><td>' + esc(r.name) + '</td><td style="text-align:right">' + r.prz + '</td><td style="text-align:right">' + r.plan + '</td><td style="text-align:right">' + (r.unplaced > 0 ? '<b style="color:#ef4444">' + r.unplaced + "</b>" : r.unplaced) + '</td><td style="text-align:right">' + (r.swPrz ? r.swPrz : "—") + '</td><td style="text-align:right">' + (r.swPlan ? r.swPlan : "—") + '</td><td style="text-align:right">' + r.freeToday + "</td></tr>";
+    });
+    h += '<tr><th>Razem</th><th style="text-align:right">' + sd.sums.prz + '</th><th style="text-align:right">' + sd.sums.plan + '</th><th></th><th style="text-align:right">' + (sd.sums.swPrz || "—") + '</th><th style="text-align:right">' + (sd.sums.swPlan || "—") + '</th><th></th></tr>';
+    h += "</table></div>";
+    h += '<p class="hint">Kontrola Świetlicy: godziny świetlicowe w przydziałach vs ile z nich jest w planie. „Nieułożone" &gt; 0 oznacza lekcje bez miejsca w planie.</p>';
+  }
+  h += "</div></div>";
+  return h;
+}
+function setZastDay(v){ var n = parseInt(v, 10); zastDay = isNaN(n) ? null : n; render(); }
+function toggleZastAbsent(id){ if (zastAbsent[id]) delete zastAbsent[id]; else zastAbsent[id] = true; render(); }
+function zastClear(){ zastAbsent = {}; render(); }
 
 /* ==================== start ==================== */
 var firstRun = false;
