@@ -1933,7 +1933,12 @@ function renderDane(){
        + "</select>"
        + '<input class="inp" style="width:70px" placeholder="grupa" title="Grupa (np. a, b, chł., dz.) — zajęcia tej samej klasy z różnymi grupami mogą być równolegle" value="' + esc(a.group || "") + '" onchange="setAct(\'' + a.id + '\',\'group\',this.value)">'
        + '<input class="inp" style="width:86px" placeholder="↔ powiązanie" title="Powiązanie: zajęcia z tą samą etykietą (np. REL) zawsze są na tej samej godzinie i mogą nakładać się w klasie (np. religia + świetlica równolegle)" value="' + esc(a.link || "") + '" onchange="setAct(\'' + a.id + '\',\'link\',this.value)">'
-       + '<select class="inp" style="max-width:120px" title="Uczeń (zajęcia indywidualne 1:1) — puste = cała klasa" onchange="setActStudent(\'' + a.id + '\',this.value)">'
+  var wkSel = '<select class="inp" style="max-width:64px" title="Tydzień A/B — puste = oba tygodnie" onchange="setAct(\'' + a.id + '\',\'week\',this.value)">'
+    + '<option value=""' + (!a.week ? ' selected' : '') + '>oba</option>'
+    + '<option value="A"' + (a.week === 'A' ? ' selected' : '') + '>A</option>'
+    + '<option value="B"' + (a.week === 'B' ? ' selected' : '') + '>B</option></select>';
+  h += wkSel;
+  h += wkSel + '<select class="inp" style="max-width:120px" title="Uczeń (zajęcia indywidualne 1:1) — puste = cała klasa" onchange="setActStudent(\'' + a.id + '\',this.value)">'
        + '<option value=""' + (!a.studentId ? " selected" : "") + '>— cała klasa —</option>'
        + studentsOf(a.classId).map(function(st){ return '<option value="' + st.id + '"' + (a.studentId === st.id ? " selected" : "") + '>' + esc(st.name) + "</option>"; }).join("")
        + "</select>"
@@ -2142,6 +2147,7 @@ function setAct(id, key, val){
   else if (key === "group") a.group = (val || "").trim();
   else if (key === "link") a.link = (val || "").trim();
   else if (key === "withClassId") a.withClassId = (val && val !== a.classId) ? val : "";
+  else if (key === "week") a.week = (val === "A" || val === "B") ? val : ""; /* v6.35 */
   else a[key] = val;
   prunePlacement(); save(); render();
 }
@@ -2494,6 +2500,7 @@ function setLT(i, v){
   lt[i] = m ? (m[1].length === 1 ? "0" + m[1] : m[1]) + ":" + m[2] : lt[i]; /* v6.31: zły format ignorowany — wcześniej "abc" dawało endOfLesson "0:45" */
   S.settings.lessonTimes = lt; save(); render();
 }
+function setWeekAB(v){ S.settings.weekAB = !!v; save(); render(); } /* v6.35 */
 function setLimit(k, v){
   S.settings[k] = Math.max(1, Math.min(NH, parseInt(v) || 7)); save(); render();
 }
@@ -2681,7 +2688,8 @@ function renderOgr(){
   h += '<div class="card"><div class="hd">⚙️ Limity dzienne</div><div class="bd"><div class="row">'
      + '<label class="lbl">Maks. lekcji nauczyciela dziennie:</label><input class="inp" type="number" style="width:70px" value="' + S.settings.teacherMaxPerDay + '" onchange="setLimit(\'teacherMaxPerDay\',this.value)">'
      + '<label class="lbl" style="margin-left:14px">Maks. lekcji klasy dziennie:</label><input class="inp" type="number" style="width:70px" value="' + S.settings.classMaxPerDay + '" onchange="setLimit(\'classMaxPerDay\',this.value)">'
-     + '</div><p class="hint">Zmiana limitów obowiązuje przy kolejnym generowaniu i ruchach ręcznych.</p></div></div>';
+     + '</div><p class="hint">Zmiana limitów obowiązuje przy kolejnym generowaniu i ruchach ręcznych.</p>'
+     + '<div class="row" style="margin-top:8px"><label class="lbl" style="cursor:pointer"><input type="checkbox"' + (S.settings.weekAB ? " checked" : "") + ' onchange="setWeekAB(this.checked)"> Rotacja tygodni <b>A/B</b> — zajęcia w Dane można oznaczyć „tylko A” / „tylko B” (puste = oba); plan pokazuje oba tygodnie obok siebie</label></div></div></div>';
   h += '<div class="card"><div class="hd">⚖️ Wagi kar — co automat omija najmocniej</div><div class="bd">';
   h += '<p class="hint">Im większa waga, tym mocniej „🪄 Wygeneruj automatycznie” omija dany problem. <b>0 = nie liczy się w ogóle</b> (wbudowaną zasadę można tak „wyłączyć”). Reguły własne (miękkie) mają swoje wagi w karcie 📐 powyżej.</p>';
   h += '<div class="row"><span class="lbl" style="min-width:230px">Okienka nauczyciela (za każde ponad limit):</span><input class="inp" type="number" min="0" max="2000" style="width:70px" value="' + S.settings.wTeacherGap + '" onchange="setPenW(\'wTeacherGap\',this.value)"><span class="hint" style="margin:0">domyślnie 150</span></div>';
