@@ -170,7 +170,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.28.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.29.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -3048,12 +3048,16 @@ function a1XlsxParts(){
     for (var col = 1; col <= lastCol; col++) rXml += cEmp(col, row, 11);
     rows.push(rXml + "</row>");
   });
+  /* v6.29: wiersze muszą być w arkuszu w rosnącej kolejności r — Excel odrzuca plik, gdy separatory leżą na końcu */
+  rows.sort(function(a, b){ return +(/r="(\d+)"/.exec(a)[1]) - +(/r="(\d+)"/.exec(b)[1]); });
   /* scalenia */
   var merges = ["A1:" + L(colS - 1) + "2"];
   if (nT){ merges.push(L(colT0) + "1:" + L(lastCol) + "2"); merges.push(L(colT0) + "3:" + L(lastCol) + "3"); }
   merges.push("D3:" + L(colS - 1) + "3", L(colS) + "3:" + L(colS) + "4");
   bands.forEach(function(b){ merges.push("A" + b.row0 + ":A" + (b.row0 + NH - 1)); });
   seps.forEach(function(row){ merges.push("A" + row + ":" + L(lastCol) + row); });
+  function mergeKey(m){ var c = /^([A-Z]+)(\d+)/.exec(m); return +c[2] * 1000 + c[1].length * 100 + (c[1].charCodeAt(0) - 64); }
+  merges.sort(function(a, b){ return mergeKey(a) - mergeKey(b); });
   var mergeXml = '<mergeCells count="' + merges.length + '">' + merges.map(function(m){ return '<mergeCell ref="' + m + '"/>'; }).join("") + "</mergeCells>";
   /* szerokości kolumn */
   var colsXml = '<cols>' +
