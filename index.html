@@ -1,4 +1,5 @@
 
+
 <!doctype html>
 <html lang="pl">
 <head>
@@ -169,7 +170,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.27.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.28.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -178,6 +179,7 @@ var NH = 8; // slotów dziennie
 function slotBlocked(settings, s){ return ((settings && settings.blockedSlots) || []).indexOf(s) >= 0; }
 var LS = "plan-zajec-vibe-v1";
 var S = null;
+var eksDocxInits = false; /* v6.28: opcjonalne inicjały nauczycieli w plikach Word */
 var tab = "plan", sel = null, viewMode = "class", viewSel = "", ogrT = "", ogrC = "", importRows = null, importText = "", eksMode = "klasy";
 var confirmKey = null, confirmTimer = null;
 
@@ -2262,6 +2264,7 @@ function setRew(cid, v){
   if (c){ var r = parseInt(v, 10); if (!(r >= 1 && r <= 6)) r = 2; c.rew = r; save(); render(); }
 }
 function applyRewWytyczne(){
+  if (!confirm("Przywrócić tory rewalidacji wg wytycznych SPS 7 (rozpoznane po nazwach oddziałów)? Nadpisze to obecne ustawienia wszystkich oddziałów.")) return;
   S.classes.forEach(function(c){ c.rew = rewFromName(c.name); });
   save(); render();
   flash("✅ Tory ustawione wg wytycznych (rozpoznane po nazwach oddziałów). Możesz teraz zmienić każdą klasę osobno.", "ok");
@@ -2621,6 +2624,7 @@ function renderPlan(){
 
 /* ---------- zakładka EKSPORT ---------- */
 function eksModeSet(m){ eksMode = m; render(); }
+function setEksDocxInits(v){ eksDocxInits = !!v; render(); } /* v6.28 */
 function planText(kind, id, bySlot){
   var header = kind === "class" ? ("KLASA " + cName(id)) : ("NAUCZYCIEL: " + tName(id));
   var rows = [];
@@ -2781,6 +2785,9 @@ function docxPlans(){
   var mode = (eksMode === "nauczyciele") ? "teacher" : "class";
   var ls = lessons(), placement = S.placement, bySlot = lessonsBySlot(ls, placement);
   var lt = lessonTimes();
+  var used = {}; /* v6.28: opcjonalne inicjały w planach klas (jak w Zbiorczej) */
+  if (eksDocxInits) ls.forEach(function(L){ if (L.teacherId) used[L.teacherId] = true; });
+  var inits = teacherInits(used);
   var ids = mode === "class" ? S.classes.map(function(c){ return c.id; }) : S.teachers.map(function(t){ return t.id; });
   var body = "";
   ids.forEach(function(id, pi){
@@ -2809,7 +2816,7 @@ function docxPlans(){
         cell.forEach(function(L, ix){
           if (ix) body += "</w:p><w:p>";
           body += '<w:r><w:t xml:space="preserve">' + esc(L.subject) + '</w:t></w:r>';
-          body += '<w:r><w:br/></w:r><w:r><w:rPr><w:sz w:val="18"/><w:color w:val="555555"/></w:rPr><w:t xml:space="preserve">' + esc(mode === "class" ? tName(L.teacherId) : L.classIds.map(cName).join("+")) + '</w:t></w:r>';
+          body += '<w:r><w:br/></w:r><w:r><w:rPr><w:sz w:val="18"/><w:color w:val="555555"/></w:rPr><w:t xml:space="preserve">' + esc(mode === "class" ? (eksDocxInits ? (inits[L.teacherId] || "") : tName(L.teacherId)) : L.classIds.map(cName).join("+")) + '</w:t></w:r>';
         });
         body += "</w:p></w:tc>";
       }
@@ -3199,11 +3206,12 @@ function renderEks(){
      + '<button class="btn2" onclick="downloadA1()">📊 A1 — Excel</button>'
      + '<button class="btn2" onclick="openA1Print()">🖼️ A1 — wydruk</button>'
      + '<button class="btn2" onclick="downloadDocx()">📄 Word (.docx)</button>'
+     + '<label class="row" style="cursor:pointer;margin:0"><input type="checkbox"' + (eksDocxInits ? " checked" : "") + ' onchange="setEksDocxInits(this.checked)"><span class="hint" style="margin:0">Word: inicjały nauczycieli</span></label>'
      + "</div>";
   h += '<textarea id="eksText" class="inp ta big" readonly>' + esc(eksText()) + "</textarea>";
   h += '<p class="hint">' + (eksMode === "csv" ? "CSV ze średnikami — Excel otworzy w kolumnach (jeśli nie, użyj Dane → Tekst jako kolumny)." : "Tekst o stałej szerokości kolumn — wklejasz do Worda/Excela/maila. Skróty przedmiotów z pierwszych liter.") + "</p>";
   h += '<p class="hint">🖼️ Plansze A3/A2: otwierają się w nowej karcie — po jednym wielkim planie na oddział, do wydruku na korytarz (duże litery, pełne nazwiska). Najlepiej drukować z komputera.</p>';
-  h += '<p class="hint">📄 Word (.docx): pobiera plik z planami wg widoku powyżej (klasy albo nauczyciele; przy CSV — plany klas). Otworzysz i zedytujesz go w Wordzie; PDF zrobisz z plansz A3/A2 (drukuj → zapisz jako PDF).</p>';
+  h += '<p class="hint">📄 Word (.docx): pobiera plik z planami wg widoku powyżej (klasy albo nauczyciele; przy CSV — plany klas). Otworzysz i zedytujesz go w Wordzie; PDF zrobisz z plansz A3/A2 (drukuj → zapisz jako PDF). Przełącznik „Word: inicjały” — w planach klas skróty nauczycieli jak w Zbiorczej zamiast pełnych nazwisk.</p>';
   h += '<p class="hint">🗓️ Zbiorcza (tydzień): jedna plansza dla całej szkoły — godziny w wierszach, oddziały w kolumnach, dni w pasach; w komórce skrót przedmiotu i inicjały nauczyciela (przy dublu krótkie rozróżnienie, maks. 4 znaki). Najlepiej drukować z komputera.</p>';
   h += '<p class="hint">📊 A1 — Excel i 🖼️ A1 — wydruk (v6.20): plansza w konwencji szkolnego szablonu A1 — kolumny oddziałów (szkolne kody: 1a, 2aA, 5z…), Świetlica i kolumny nauczycieli (nagłówki: inicjały nauczyciela jak w Zbiorczej; w komórce kod klasy, którą wtedy prowadzą), godziny wierszami. Excel: plik .xlsx do dalszej edycji; wydruk: A1 poziomo. Ułożony plan wypełnia wszystko automatycznie.</p>';
   h += "</div></div>";
@@ -3284,8 +3292,9 @@ function renderZast(){ /* v6.27: zakładka Zastępstwa — nieobecni, wypadając
   var h = '<div class="card"><div class="hd"><span>🔁 Zastępstwa</span><div class="row" style="margin:0">';
   h += '<select class="inp" onchange="setZastDay(this.value)">';
   DAYS.forEach(function(dn, i){ h += '<option value="' + i + '"' + (i === di ? " selected" : "") + ">" + dn + "</option>"; });
-  h += '</select><button class="btn2" onclick="zastClear()">Wyczyść zaznaczenia</button></div></div><div class="bd">';
+  h += '</select><button class="btn2" onclick="openZastPrint()">🖨️ Wydruk kartki</button><button class="btn2" onclick="zastClear()">Wyczyść zaznaczenia</button></div></div><div class="bd">';
   h += '<p class="hint">Zaznacz nieobecnych nauczycieli — poniżej pojawią się wypadające lekcje i kto może je przykryć (kandydat: bez lekcji na tej godzinie, dostępny wg ⛔ ogranicczeń; wakaty nie wchodzą na listę). Domyślnie dzień bieżący.</p>';
+  if (zastSavedAt && zastSavedAt !== zastTodayStr()) h += '<p class="hint">📌 Zaznaczenia wczytano z zapisu z dnia ' + esc(zastSavedAt) + ' — sprawdź, czy na dziś są aktualne. Zaznaczenia zapisują się w tej przeglądarce i wrócą po ponownym otwarciu apki.</p>';
   var withLessons = sortedTeachers().filter(function(t){ return (zd.dayLen[t.id] || 0) > 0; });
   if (!withLessons.length) h += '<p class="hint">W ' + esc(DAYS[di]) + ' nie ma ułożonych lekcji — najpierw ułóż plan w 🗓️ Plan.</p>';
   withLessons.forEach(function(t){
@@ -3330,14 +3339,87 @@ function renderZast(){ /* v6.27: zakładka Zastępstwa — nieobecni, wypadając
   h += "</div></div>";
   return h;
 }
-function setZastDay(v){ var n = parseInt(v, 10); zastDay = isNaN(n) ? null : n; render(); }
-function toggleZastAbsent(id){ if (zastAbsent[id]) delete zastAbsent[id]; else zastAbsent[id] = true; render(); }
-function zastClear(){ zastAbsent = {}; render(); }
+function setZastDay(v){ var n = parseInt(v, 10); zastDay = isNaN(n) ? null : n; saveZast(); render(); }
+function toggleZastAbsent(id){ if (zastAbsent[id]) delete zastAbsent[id]; else zastAbsent[id] = true; saveZast(); render(); }
+function zastClear(){ zastAbsent = {}; saveZast(); render(); }
+
+/* ==================== v6.28: trwałe zaznaczenia zastępstw + kartka do druku ==================== */
+var LS_ZAST = "pz-zast"; /* osobny klucz — nie rusza zapisu planu */
+var zastSavedAt = null; /* data ostatniego zapisu zaznaczeń (YYYY-MM-DD) */
+function zastTodayStr(){ var d = new Date(); return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); }
+function saveZast(){
+  var ids = Object.keys(zastAbsent).filter(function(id){ return S.teachers.some(function(t){ return t.id === id; }); });
+  zastAbsent = {}; ids.forEach(function(id){ zastAbsent[id] = true; });
+  zastSavedAt = zastTodayStr();
+  try{ localStorage.setItem(LS_ZAST, JSON.stringify({ day: zastDay, absent: ids, savedAt: zastSavedAt })); }catch(e){}
+}
+function loadZast(){
+  var j = null;
+  try{ j = JSON.parse(localStorage.getItem(LS_ZAST) || "null"); }catch(e){ j = null; }
+  if (!j) return;
+  zastDay = (j.day === null || (j.day >= 0 && j.day <= 4)) ? (j.day == null ? null : j.day) : null;
+  zastAbsent = {};
+  (j.absent || []).forEach(function(id){ if (S.teachers.some(function(t){ return t.id === id; })) zastAbsent[id] = true; });
+  zastSavedAt = j.savedAt || null;
+}
+function zastPrintHtml(){ /* v6.28: kartka zastępstw do druku — A4, puste pole „Zastępuje" do wpisu ręcznego */
+  var di = zastDayIdx(), zd = zastData(), lt = lessonTimes();
+  var absList = sortedTeachers().filter(function(t){ return zastAbsent[t.id]; }).map(function(t){ return t.name; });
+  var css = "<style>"
+    + "@page { size: A4 portrait; margin: 10mm; }"
+    + "* { box-sizing: border-box; margin: 0; padding: 0; }"
+    + "body { font-family: Arial, 'Segoe UI', sans-serif; background: #f2f4f7; }"
+    + ".bar { position: sticky; top: 0; z-index: 9; background: #1f2d3d; color: #fff; padding: 4mm 8mm; display: flex; gap: 6mm; align-items: center; }"
+    + ".bar button { font-size: 4.5mm; padding: 2mm 6mm; border: 0; border-radius: 2mm; background: #4a90d9; color: #fff; cursor: pointer; }"
+    + "@media print { .bar { display: none; } body { background: #fff; } }"
+    + ".pg { width: 190mm; background: #fff; margin: 8mm auto; padding: 6mm; }"
+    + ".title { text-align: center; font-size: 8mm; font-weight: bold; letter-spacing: 1.5mm; }"
+    + ".sub { text-align: center; font-size: 4mm; color: #333; margin: 2mm 0 1mm; }"
+    + ".abs { font-size: 4mm; margin: 3mm 0; }"
+    + "table { width: 100%; border-collapse: collapse; margin-top: 3mm; }"
+    + "th, td { border: 0.3mm solid #444; font-size: 3.8mm; padding: 2mm 1.5mm; text-align: left; vertical-align: top; }"
+    + "th { background: #e8edf3; text-align: center; }"
+    + "td.c { text-align: center; }"
+    + "td small { color: #555; font-size: 3.2mm; }"
+    + ".sum { margin-top: 5mm; font-size: 3.8mm; }"
+    + "</style>";
+  var b = '<div class="title">ZASTĘPSTWA</div>'
+    + '<div class="sub">' + esc(DAYS[di]) + ' · Szkoła Podstawowa nr 7 Specjalna w Katowicach · ' + esc(zastTodayStr()) + '</div>'
+    + '<div class="abs"><b>Nieobecni:</b> ' + (absList.length ? esc(absList.join(", ")) : "—") + '</div>';
+  if (zd.fall.length){
+    b += '<table><tr><th style="width:8mm">Lp.</th><th style="width:22mm">Godzina</th><th style="width:20mm">Klasa</th><th>Zajęcia</th><th style="width:32mm">Nieobecny/a</th><th style="width:44mm">Propozycje (lekcji dziś)</th><th style="width:30mm">Zastępuje</th></tr>';
+    zd.fall.forEach(function(f, i){
+      var cands = f.candidates.slice(0, 3).map(function(t){ return esc(t.name) + " (" + (zd.dayLen[t.id] || 0) + ")"; }).join(", ");
+      if (f.candidates.length > 3) cands += " …";
+      b += '<tr><td class="c">' + (i + 1) + '</td><td class="c">' + (f.h + 1) + ". " + esc(lt[f.h]) + "-" + esc(endOfLesson(lt[f.h])) + '</td><td class="c">' + esc(f.classes) + '</td><td>' + esc(f.subject) + '</td><td>' + esc(f.teacherName) + '</td><td><small>' + (cands || "brak wolnych") + '</small></td><td class="z"></td></tr>';
+    });
+    b += "</table>";
+    if (zd.candSum.length){
+      b += '<div class="sum"><b>Kto może przykryć najwięcej:</b> '
+        + zd.candSum.slice(0, 5).map(function(c){ return esc(c.name) + " — do " + c.cover + " godz. (" + c.free + " wolnych)"; }).join(" · ")
+        + '</div>';
+    }
+  } else {
+    b += '<div class="sum">Brak wypadających lekcji' + (absList.length ? ' — zaznaczeni nauczyciele nie mają dziś ułożonych zajęć.' : ' — nie zaznaczono nieobecnych.') + '</div>';
+  }
+  return '<!DOCTYPE html><html lang="pl"><head><meta charset="utf-8"><title>Zastępstwa — ' + esc(DAYS[di]) + '</title>' + css + '</head><body>'
+    + '<div class="bar"><button onclick="window.print()">🖨️ DRUKUJ</button><span style="font-size:3.6mm;opacity:.85">Kartka zastępstw — pole „Zastępuje" wypełnij ręcznie po wydruku.</span></div>'
+    + '<div class="pg">' + b + '</div></body></html>';
+}
+function openZastPrint(){
+  var zd = zastData();
+  if (!Object.keys(zastAbsent).length && !zd.fall.length){ flash("Zaznacz najpierw nieobecnych nauczycieli — kartka będzie wtedy gotowa do wydruku.", "warn"); return; }
+  var w = window.open("", "_blank");
+  if (!w){ flash("Przeglądarka zablokowała otwieranie nowych kart — zezwól na wyskakujące okna i spróbuj ponownie.", "err"); return; }
+  w.document.write(zastPrintHtml());
+  w.document.close();
+}
 
 /* ==================== start ==================== */
 var firstRun = false;
 try{ if (!localStorage.getItem(LS)) firstRun = true; }catch(e){ firstRun = true; }
 S = loadState();
+loadZast(); /* v6.28: odtwórz zaznaczenia zastępstw z poprzedniej sesji */
 if (firstRun) save();
 var themeBtnEl = document.getElementById("themeBtn");
 if (themeBtnEl) themeBtnEl.onclick = cycleTheme;
