@@ -229,6 +229,10 @@ function normalize(p){
   p.rooms.forEach(function(r){ if (r.id == null) r.id = ""; if (r.name == null) r.name = ""; });
   p.classes.forEach(function(c){ if (c.rew == null) c.rew = rewFromName(c.name); if (!Array.isArray(c.blocked)) c.blocked = []; if (c.roomId == null) c.roomId = ""; if (!Array.isArray(c.students)) c.students = []; }); /* v6.33: uczniowie w oddziale */
   p.activities.forEach(function(a){ if (a.group == null) a.group = ""; if (a.withClassId == null) a.withClassId = ""; if (a.link == null) a.link = ""; if (a.roomId == null) a.roomId = ""; if (a.studentId == null) a.studentId = ""; }); /* v6.33: zajęcia 1:1 do ucznia */
+  if (!Array.isArray(p.duties)) p.duties = []; /* v6.34: dyżury — { id, name, slotsPerWeek } */
+  p.duties.forEach(function(d){ if (d.id == null) d.id = ""; if (d.name == null) d.name = ""; if (d.slotsPerWeek == null) d.slotsPerWeek = 1; });
+  if (!p.dutyPlacement) p.dutyPlacement = {}; /* v6.34: dutyId -> slot */
+  Object.keys(p.dutyPlacement).forEach(function(k){ var sv = p.dutyPlacement[k]; if (typeof sv !== "number" || !isFinite(sv) || sv < 0 || sv >= 5 * NH || Math.floor(sv) !== sv) delete p.dutyPlacement[k]; });
   if (!p.placement) p.placement = {};
   /* v6.31: sanacja placement — slot spoza zakresu 0..5*NH-1 (np. z ręcznie edytowanej kopii .json) rozbijał findViolations/renderPlan/softPenalty */
   Object.keys(p.placement).forEach(function(k){ var sv = p.placement[k]; if (typeof sv !== "number" || !isFinite(sv) || sv < 0 || sv >= 5 * NH || Math.floor(sv) !== sv) delete p.placement[k]; });
@@ -302,6 +306,8 @@ function sps7State(){
   return {
     teachers: [],
     rooms: [],
+    duties: [{ id: "d1", name: "Dyżur przy wejściu", slotsPerWeek: 5 }, { id: "d2", name: "Dyżur na korytarzu", slotsPerWeek: 5 }],
+    dutyPlacement: {},
     classes: names.map(function(n, i){ return { id: "c" + (i + 1), name: n, rew: rew[i], blocked: [] }; }),
     activities: [],
     placement: {},
@@ -1725,6 +1731,8 @@ function flash(text, kind){
 function setTab(t){ tab = t; render(); }
 function effRoomId(L){ return L.roomId || cRoomOf({ classId: L.classIds[0] }); } /* v6.32: sala zajęć, a gdy pusta — sala macierzysta klasy */
 function roomName(rid){ var r = null; (S.rooms || []).forEach(function(x){ if (x.id === rid) r = x; }); return r ? r.name : (rid || '?'); }
+function dutyById(id){ var d = null; (S.duties || []).forEach(function(x){ if (x.id === id) d = x; }); return d; } /* v6.34 */
+function dutiesBySlot(dp){ var m = {}; Object.keys(dp || {}).forEach(function(did){ var sl = dp[did]; if (sl == null) return; (m[sl] = m[sl] || []).push(did); }); return m; } /* v6.34 */
 function studentsOf(cid){ var c = null; S.classes.forEach(function(x){ if (x.id === cid) c = x; }); return c ? (c.students || []) : []; } /* v6.33 */
 function studentName(sid){ for (var i = 0; i < S.classes.length; i++){ var st = (S.classes[i].students || []).filter(function(x){ return x.id === sid; })[0]; if (st) return st.name + ' (' + S.classes[i].name + ')'; } return sid || '?'; }
 function cRoomOf(a){ var c = null; S.classes.forEach(function(x){ if (x.id === a.classId) c = x; }); return c ? (c.roomId || '') : ''; } /* v6.32: sala macierzysta klasy zajęć */
