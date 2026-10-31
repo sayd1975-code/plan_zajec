@@ -1679,6 +1679,8 @@ function flash(text, kind){
 
 /* ==================== render ==================== */
 function setTab(t){ tab = t; render(); }
+function cRoomOf(a){ var c = null; S.classes.forEach(function(x){ if (x.id === a.classId) c = x; }); return c ? (c.roomId || '') : ''; } /* v6.32: sala macierzysta klasy zajęć */
+function roomOpts(sel){ var o = '<option value=""' + (!sel ? ' selected' : '') + '>— bez sali —</option>'; o += (S.rooms || []).map(function(r){ return '<option value="' + r.id + '"' + (r.id === sel ? ' selected' : '') + '>' + esc(r.name) + '</option>'; }).join(''); return o; } /* v6.32 */
 function opts(list, val, label){
   var has = list.some(function(x){ return x.id === val; });
   var h = "";
@@ -1746,6 +1748,7 @@ function renderDane(){
   if (!S.classes.length) h += '<p class="hint">Brak oddziałów — dodaj pierwszy.</p>';
   S.classes.forEach(function(c){
     h += '<div class="row"><input class="inp" style="flex:1" value="' + esc(c.name) + '" onchange="renClass(\'' + c.id + '\',this.value)">'
+       + '<select class="inp" style="max-width:130px" title="Sala macierzysta oddziału — uczniowie siedzą w niej na co dzień; nauczyciele przemieszczają się na zajęcia do innych sal" onchange="setClassRoom(\'" + c.id + "\',this.value)">' + roomOpts(c.roomId) + '</select>'
        + '<span class="badge">' + (hByC[c.id] || 0) + ' h/tydz.</span>'
        + '<button class="del" title="Usuń" onclick="delClass(\'' + c.id + '\')">✕</button></div>';
   });
@@ -1761,6 +1764,14 @@ function renderDane(){
        + '<button class="del" title="Usuń" onclick="delTeacher(\'' + t.id + '\')">✕</button></div>';
   });
   h += '<div class="row"><input id="newTeacherName" class="inp" style="flex:1" placeholder="np. Jan Kowalski"><input id="newTeacherShort" class="inp" style="width:58px;text-align:center" placeholder="skrót"><button class="btn" onclick="addTeacher()">+ Dodaj</button></div>';
+  h += "</div></div>";
+  h += '<div class="card"><div class="hd">🏫 Sale / gabinety <span class="hint" style="font-weight:400">— uczniowie mają salę macierzystą (przy oddziale); nauczyciel przemieszcza się na zajęcia (sala przy zajęciach)</span></div><div class="bd">';
+  if (!S.rooms.length) h += '<p class="hint">Brak sal — dodaj pierwszą (np. „Gabinet logopedy").</p>';
+  S.rooms.forEach(function(r){
+    h += '<div class="row"><input class="inp" style="flex:1" value="' + esc(r.name) + '" onchange="renRoom(\'' + r.id + '\',this.value)">'
+       + '<button class="del" title="Usuń" onclick="delRoom(\'' + r.id + '\')">✕</button></div>';
+  });
+  h += '<div class="row"><input id="newRoomName" class="inp" style="flex:1" placeholder="np. Gabinet logopedy"><button class="btn" onclick="addRoom()">+ Dodaj</button></div>';
   h += "</div></div></div>";
   h += '<div class="card"><div class="hd">📚 Zajęcia — kto, co i ile godzin prowadzi w danej klasie</div><div class="bd">';
   if (!S.activities.length) h += '<p class="hint">Brak zajęć — dodaj pierwszy wiersz albo skorzystaj z importu poniżej.</p>';
@@ -1780,6 +1791,10 @@ function renderDane(){
        + "</select>"
        + '<input class="inp" style="width:70px" placeholder="grupa" title="Grupa (np. a, b, chł., dz.) — zajęcia tej samej klasy z różnymi grupami mogą być równolegle" value="' + esc(a.group || "") + '" onchange="setAct(\'' + a.id + '\',\'group\',this.value)">'
        + '<input class="inp" style="width:86px" placeholder="↔ powiązanie" title="Powiązanie: zajęcia z tą samą etykietą (np. REL) zawsze są na tej samej godzinie i mogą nakładać się w klasie (np. religia + świetlica równolegle)" value="' + esc(a.link || "") + '" onchange="setAct(\'' + a.id + '\',\'link\',this.value)">'
+       + '<select class="inp" style="max-width:130px" title="Sala zajęć — puste = sala macierzysta klasy (uczniowie zostają, nauczyciel przychodzi)" onchange="setAct(\'' + a.id + '\',\'roomId\',this.value)">'
+       + '<option value=""' + (!a.roomId ? " selected" : "") + '>— sala klasy —</option>'
+       + (S.rooms || []).map(function(r){ return '<option value="' + r.id + '"' + (a.roomId === r.id ? " selected" : "") + '>' + esc(r.name) + "</option>"; }).join("")
+       + "</select>"
        + '<input class="inp" type="number" min="1" max="20" style="text-align:center" value="' + a.hours + '" onchange="setAct(\'' + a.id + '\',\'hours\',this.value)">'
        + '<button class="del" onclick="delAct(\'' + a.id + '\')">✕</button></div>';
   });
@@ -1899,6 +1914,18 @@ function delTeacher(id){
   if (ogrT === id) ogrT = "";
   save(); render();
 }
+function addRoom(){
+  var v = document.getElementById('newRoomName').value.trim();
+  if (!v) return;
+  S.rooms.push({ id: nextId(S.rooms, 'r'), name: v }); save(); render();
+}
+function renRoom(id, v){ S.rooms.forEach(function(r){ if (r.id === id) r.name = v; }); save(); render(); }
+function delRoom(id){
+  if (S.activities.some(function(a){ return a.roomId === id; }) || S.classes.some(function(c){ return c.roomId === id; })){ flash('Nie można usunąć — sala jest przypisana do zajęć lub oddziału. Najpierw zmień przypisanie.', 'err'); return; }
+  S.rooms = S.rooms.filter(function(r){ return r.id !== id; });
+  save(); render();
+}
+function setClassRoom(id, v){ S.classes.forEach(function(c){ if (c.id === id) c.roomId = v; }); save(); render(); }
 function addAct(){
   if (!S.classes.length || !S.teachers.length){ flash("Najpierw dodaj przynajmniej jedną klasę i jednego nauczyciela.", "warn"); return; }
   S.activities.push({ id: nextId(S.activities, "a"), classId: S.classes[0].id, teacherId: S.teachers[0].id, subject: "", hours: 1 }); save(); render();
