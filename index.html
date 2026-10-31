@@ -1834,6 +1834,37 @@ function renderDane(){
   });
   h += '<div class="row"><input id="newRoomName" class="inp" style="flex:1" placeholder="np. Gabinet logopedy"><button class="btn" onclick="addRoom()">+ Dodaj</button></div>';
   h += "</div></div></div>";
+  h += '<div class="card"><div class="hd">🚨 Dyżury <span class="hint" style="font-weight:400">— kliknij „Rozłóż automatycznie”, potem klikaj komórki siatki poniżej; dyżur nie może kolidować z lekcją ani innym dyżurem</span></div><div class="bd">';
+  if (!(S.duties || []).length) h += '<p class="hint">Brak dyżurów — dodaj pierwszy.</p>';
+  (S.duties || []).forEach(function(d){
+    var used = (S.dutyPlacement[d.id] || []).length;
+    h += '<div class="row"><input class="inp" style="flex:1" value="' + esc(d.name) + '" onchange="renDuty(\'' + d.id + '\',this.value)">'
+       + '<input class="inp" type="number" min="1" max="40" style="width:56px;text-align:center" title="ile godzin tygodniowo" value="' + d.slotsPerWeek + '" onchange="setDutySlots(\'' + d.id + '\',this.value)">'
+       + '<span class="badge">' + used + '/' + d.slotsPerWeek + '</span>'
+       + '<button class="del" title="Usuń dyżur" onclick="delDuty(\'' + d.id + '\')">✕</button></div>';
+  });
+  h += '<div class="row"><input id="newDutyName" class="inp" style="flex:1" placeholder="np. Dyżur przy wejściu"><input id="newDutySlots" class="inp" type="number" min="1" max="40" style="width:56px;text-align:center" value="5" title="godzin tygodniowo"><button class="btn" onclick="addDuty()">+ Dodaj</button>'
+     + '<button class="btn2" onclick="autoDuties()">🧭 Rozłóż automatycznie</button></div>';
+  if ((S.duties || []).length){
+    var dbs = dutiesBySlot(S.dutyPlacement);
+    var lt2 = lessonTimes();
+    h += '<div style="overflow-x:auto;margin-top:8px"><table class="plan"><tr><th>dyżur</th>';
+    for (var dd = 0; dd < 5; dd++) for (var hh = 0; hh < NH; hh++) h += "<th style='min-width:34px'>" + ["Pn","Wt","Śr","Cz","Pt"][dd] + (hh + 1) + "</th>";
+    h += "</tr>";
+    (S.duties || []).forEach(function(d){
+      h += '<tr><td class="day" style="white-space:nowrap">' + esc(d.name) + '</td>';
+      for (var sl = 0; sl < 5 * NH; sl++){
+        var on = (dbs[sl] || []).indexOf(d.id) >= 0;
+        var bl2 = S.settings.blockedSlots.indexOf(sl) >= 0;
+        var lessonHere = (lessonsBySlot(lessons(), S.placement)[sl] || []).length > 0;
+        h += '<td onclick="dutyClick(\'' + d.id + '\',' + sl + ')" style="' + (on ? 'background:#fde68a;font-weight:700' : '') + (bl2 || lessonHere ? ';background:repeating-linear-gradient(45deg,transparent,transparent 4px,rgba(148,163,184,.25) 4px,rgba(148,163,184,.25) 8px)' : '') + '" title="' + DAYS[Math.floor(sl / NH)] + ' lek. ' + ((sl % NH) + 1) + ' ' + esc(lt2[sl % NH]) + (lessonHere ? ' — jest lekcja' : '') + '">' + (on ? '✓' : '') + '</td>';
+      }
+      h += '</tr>';
+    });
+    h += '</table></div>';
+    h += '<p class="hint">Żółte ✓ = dyżur w tej godzinie. Szare prążki = godzina zablokowana lub zajęta lekcją (nie można tam dyżuru). Kliknięcie przełącza.</p>';
+  }
+  h += "</div></div>";
   h += '<div class="card"><div class="hd">📚 Zajęcia — kto, co i ile godzin prowadzi w danej klasie</div><div class="bd">';
   if (!S.activities.length) h += '<p class="hint">Brak zajęć — dodaj pierwszy wiersz albo skorzystaj z importu poniżej.</p>';
   S.activities.forEach(function(a){
