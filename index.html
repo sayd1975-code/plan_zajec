@@ -170,7 +170,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.31.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.32.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -2675,13 +2675,15 @@ function renderPlan(){
       relC.forEach(function(L){
         h += '<div class="chip c' + colorIdx(L.subject) + (sel === L.id ? " sel" : "") + '" onclick="event.stopPropagation();chipClick(\'' + L.id + '\')" oncontextmenu="unassign(\'' + L.id + '\',event)" title="' + esc(L.subject) + (L.link ? " (↔ " + L.link + ")" : "") + " — prawy klik usuwa z planu\">"
            + '<span class="subj">' + esc(L.subject) + "</span>"
-           + '<span class="sub">' + esc(viewMode === "class" ? tShort(L.teacherId) : L.classIds.map(cName).join("+")) + "</span></div>";
+           + '<span class="sub">' + esc(viewMode === "class" ? tShort(L.teacherId) : L.classIds.map(cName).join("+")) + "</span>"
+           + (function(){ var r = effRoomId(L); var home = cRoomOf({ classId: L.classIds[0] }); if (r && r !== home) return ' <span class="sub" title="Sala">📍' + esc(roomName(r)) + "</span>"; return ""; })() + "</div>";
       });
       h += "</td>";
     }
     h += "</tr>";
   }
   h += "</table></div>";
+  h += '<p class="hint">📍 przy zajęciach = sala inna niż macierzysta klasy (uczniowie idą do gabinetu, nauczyciel przychodzi do klasy). Jedna sala może mieć w danej godzinie tylko jedną klasę.</p>';
   h += '<p class="hint">Klik lekcja → wolne pole = przeniesienie • lekcja → lekcja = zamiana • prawy klik = usuń z planu. Program pilnuje dostępności nauczycieli, podwójnych lekcji i limitów dziennych, a także zasad z wytycznych: zablokowane godziny (siatka w Zasadach planu), okienka, bloki AUT, powiązania tej samej godziny i pary przedmiotów.</p>';
   return h;
 }
