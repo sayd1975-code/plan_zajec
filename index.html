@@ -934,6 +934,17 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
       var slotTaken = others.length > 0;
       if (!slotTaken && arr(loadC, cid)[d] >= settings.classMaxPerDay) return false;
     }
+    /* v6.32: kolizja sal — w danej sali w danym slocie może być tylko JEDNA klasa (uczniowie siedzą w sali macierzystej; nauczyciel przychodzi) */
+    var rId = effRoomId(L);
+    if (rId){
+      var roomBusy = (atSlot[s] || []).filter(function(X){ return X.id !== L.id && effRoomId(X) === rId; });
+      for (var rb = 0; rb < roomBusy.length; rb++){
+        var RB = roomBusy[rb];
+        var sameCls = false;
+        for (var ri2 = 0; ri2 < L.classIds.length; ri2++) if (RB.classIds.indexOf(L.classIds[ri2]) >= 0){ sameCls = true; break; }
+        if (!sameCls) return false;
+      }
+    }
     return true;
   }
   function conflictsAt(U, s2){
@@ -944,6 +955,13 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
       if (U.teacherId && x.teacherId === U.teacherId){ out.push(x); return; }
       for (var i = 0; i < U.classIds.length; i++){
         if (x.classIds.indexOf(U.classIds[i]) >= 0 && classClash(lk, kindL(x), U.group, x.group)){ out.push(x); return; }
+      }
+      /* v6.32: ta sama sala, inna klasa */
+      var rU = effRoomId(U), rX = effRoomId(x);
+      if (rU && rX && rU === rX){
+        var sh = false;
+        for (var j = 0; j < U.classIds.length; j++) if (x.classIds.indexOf(U.classIds[j]) >= 0){ sh = true; break; }
+        if (!sh){ out.push(x); return; }
       }
     });
     return out;
@@ -1125,6 +1143,16 @@ function findViolations(ls, teachers, classes, placement, settings){
     if (clash) errs.push("Klasa " + cNm(cid) + " ma dwie lekcje naraz (" + DAYS[dd] + ", godz. " + (hh + 1) + ")");
     var tracks = rewTracksOf(cM[cid]);
     if (rewN > tracks) errs.push("Klasa " + cNm(cid) + ": " + rewN + " zajęć rewalidacji naraz, a torów: " + tracks + " (" + DAYS[dd] + ", godz. " + (hh + 1) + ")");
+  }
+  /* v6.32: kolizja sal — jedna sala = jedna klasa w slocie */
+  var byRoomSlot = {};
+  ls.forEach(function(Lr){ var sr = placement[Lr.id]; if (sr == null) return; var rr = effRoomId(Lr); if (!rr) return; var k = rr + "|" + sr; (byRoomSlot[k] = byRoomSlot[k] || []).push(Lr); });
+  for (var rk in byRoomSlot){
+    var rlist = byRoomSlot[rk], rslot = +rk.split("|")[1], rd = Math.floor(rslot / NH), rh = rslot % NH;
+    var clsSet = {};
+    rlist.forEach(function(Lr){ Lr.classIds.forEach(function(cc){ clsSet[cc] = true; }); });
+    var nCls = Object.keys(clsSet).length;
+    if (nCls > 1) errs.push("Sala " + roomName(rk.split("|")[0]) + " zajęta przez " + nCls + " klasy naraz (" + DAYS[rd] + ", godz. " + (rh + 1) + ")");
   }
   for (var tk in loadT) for (var dd = 0; dd < 5; dd++) if (loadT[tk][dd] > settings.teacherMaxPerDay) errs.push(tNm(tk) + " ma " + loadT[tk][dd] + " lekcji w " + DAYS[dd] + " (limit " + settings.teacherMaxPerDay + ")");
   for (var ck in loadC) for (var dc = 0; dc < 5; dc++) if (loadC[ck][dc] > settings.classMaxPerDay) errs.push("Klasa " + cNm(ck) + " ma " + loadC[ck][dc] + " lekcji w " + DAYS[dc] + " (limit " + settings.classMaxPerDay + ")");
@@ -1679,6 +1707,8 @@ function flash(text, kind){
 
 /* ==================== render ==================== */
 function setTab(t){ tab = t; render(); }
+function effRoomId(L){ return L.roomId || cRoomOf({ classId: L.classIds[0] }); } /* v6.32: sala zajęć, a gdy pusta — sala macierzysta klasy */
+function roomName(rid){ var r = null; (S.rooms || []).forEach(function(x){ if (x.id === rid) r = x; }); return r ? r.name : (rid || '?'); }
 function cRoomOf(a){ var c = null; S.classes.forEach(function(x){ if (x.id === a.classId) c = x; }); return c ? (c.roomId || '') : ''; } /* v6.32: sala macierzysta klasy zajęć */
 function roomOpts(sel){ var o = '<option value=""' + (!sel ? ' selected' : '') + '>— bez sali —</option>'; o += (S.rooms || []).map(function(r){ return '<option value="' + r.id + '"' + (r.id === sel ? ' selected' : '') + '>' + esc(r.name) + '</option>'; }).join(''); return o; } /* v6.32 */
 function opts(list, val, label){
