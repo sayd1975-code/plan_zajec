@@ -170,7 +170,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.30.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.31.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -228,6 +228,8 @@ function normalize(p){
   p.classes.forEach(function(c){ if (c.rew == null) c.rew = rewFromName(c.name); if (!Array.isArray(c.blocked)) c.blocked = []; });
   p.activities.forEach(function(a){ if (a.group == null) a.group = ""; if (a.withClassId == null) a.withClassId = ""; if (a.link == null) a.link = ""; });
   if (!p.placement) p.placement = {};
+  /* v6.31: sanacja placement — slot spoza zakresu 0..5*NH-1 (np. z ręcznie edytowanej kopii .json) rozbijał findViolations/renderPlan/softPenalty */
+  Object.keys(p.placement).forEach(function(k){ var sv = p.placement[k]; if (typeof sv !== "number" || !isFinite(sv) || sv < 0 || sv >= 5 * NH || Math.floor(sv) !== sv) delete p.placement[k]; });
   return p;
 }
 function loadState(){
@@ -1078,7 +1080,7 @@ function findViolations(ls, teachers, classes, placement, settings){
   var slotT = {}, byClsSlot = {}, loadT = {}, loadC = {};
   function arr(m, k){ if (!m[k]) m[k] = [0,0,0,0,0]; return m[k]; }
   for (var i = 0; i < ls.length; i++){
-    var L = ls[i], s = placement[L.id]; if (s == null) continue;
+    var L = ls[i], s = placement[L.id]; if (s == null || typeof s !== "number" || s < 0 || s >= 5 * NH) continue;
     var d = Math.floor(s / NH), h = s % NH;
     if (tM[L.teacherId] && tM[L.teacherId].unavail.indexOf(s) >= 0) errs.push(tNm(L.teacherId) + " nie jest dostępny/na: " + DAYS[d] + ", lekcja " + (h + 1));
     for (var cbi2 = 0; cbi2 < L.classIds.length; cbi2++) if (cbM[L.classIds[cbi2]] && cbM[L.classIds[cbi2]].indexOf(s) >= 0) errs.push("Klasa " + cNm(L.classIds[cbi2]) + " nie może mieć wtedy lekcji (blokada oddziału, np. przewozy): " + DAYS[d] + ", lekcja " + (h + 1));
@@ -2253,7 +2255,8 @@ function toggU(s){
 }
 function setLT(i, v){
   var lt = lessonTimes().slice();
-  lt[i] = v;
+  var m = /^(\d{1,2}):(\d{2})$/.exec(String(v || "").trim());
+  lt[i] = m ? (m[1].length === 1 ? "0" + m[1] : m[1]) + ":" + m[2] : lt[i]; /* v6.31: zły format ignorowany — wcześniej "abc" dawało endOfLesson "0:45" */
   S.settings.lessonTimes = lt; save(); render();
 }
 function setLimit(k, v){
