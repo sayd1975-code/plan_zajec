@@ -170,7 +170,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.31.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.32.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -225,8 +225,10 @@ function normalize(p){
   if (p.settings.wPair == null) p.settings.wPair = 120;
   if (p.settings.classMaxGapsPerDay == null) p.settings.classMaxGapsPerDay = 1;
   if (p.settings.wClassGapDay == null) p.settings.wClassGapDay = 150;
-  p.classes.forEach(function(c){ if (c.rew == null) c.rew = rewFromName(c.name); if (!Array.isArray(c.blocked)) c.blocked = []; });
-  p.activities.forEach(function(a){ if (a.group == null) a.group = ""; if (a.withClassId == null) a.withClassId = ""; if (a.link == null) a.link = ""; });
+  if (!Array.isArray(p.rooms)) p.rooms = [];
+  p.rooms.forEach(function(r){ if (r.id == null) r.id = ""; if (r.name == null) r.name = ""; });
+  p.classes.forEach(function(c){ if (c.rew == null) c.rew = rewFromName(c.name); if (!Array.isArray(c.blocked)) c.blocked = []; if (c.roomId == null) c.roomId = ""; });
+  p.activities.forEach(function(a){ if (a.group == null) a.group = ""; if (a.withClassId == null) a.withClassId = ""; if (a.link == null) a.link = ""; if (a.roomId == null) a.roomId = ""; });
   if (!p.placement) p.placement = {};
   /* v6.31: sanacja placement — slot spoza zakresu 0..5*NH-1 (np. z ręcznie edytowanej kopii .json) rozbijał findViolations/renderPlan/softPenalty */
   Object.keys(p.placement).forEach(function(k){ var sv = p.placement[k]; if (typeof sv !== "number" || !isFinite(sv) || sv < 0 || sv >= 5 * NH || Math.floor(sv) !== sv) delete p.placement[k]; });
@@ -282,7 +284,7 @@ function classClash(lk, ok, lg, og){
 }
 function buildLessons(acts){
   var out = [];
-  for (var a of acts){ for (var i = 0; i < a.hours; i++) out.push({ id: a.id + "-" + i, activityId: a.id, classId: a.classId, classIds: [a.classId].concat(a.withClassId ? [a.withClassId] : []), teacherId: a.teacherId, subject: a.subject, kind: kindOf(a), group: a.group || "", link: a.link || "" }); }
+  for (var a of acts){ for (var i = 0; i < a.hours; i++) out.push({ id: a.id + "-" + i, activityId: a.id, classId: a.classId, classIds: [a.classId].concat(a.withClassId ? [a.withClassId] : []), teacherId: a.teacherId, subject: a.subject, kind: kindOf(a), group: a.group || "", link: a.link || "", roomId: a.roomId || "" }); }
   return out;
 }
 function lessons(){ return buildLessons(S.activities); }
@@ -299,6 +301,7 @@ function sps7State(){
   var rew =   [2,     2,       2,          2,      2,      1,       2,       1,       3,      2,      3,      3,    1,      3,    1];
   return {
     teachers: [],
+    rooms: [],
     classes: names.map(function(n, i){ return { id: "c" + (i + 1), name: n, rew: rew[i], blocked: [] }; }),
     activities: [],
     placement: {},
@@ -314,6 +317,7 @@ function demoState(){
   function T(id, name, short, un){ return { id: id, name: name, short: short, unavail: un || [] }; }
   function A(id, cid, subj, tid, h){ return { id: id, classId: cid, subject: subj, teacherId: tid, hours: h }; }
   return {
+    rooms: [{ id: "r1", name: "Gabinet logopedy" }, { id: "r2", name: "Gabinet psychologa" }, { id: "r3", name: "Sala gimnastyczna" }],
     teachers: [T("t1","Anna Kowalska","Kow"),T("t2","Maria Nowak","Now"),T("t3","Jan Wiśniewski","Wiś"),T("t4","Krystyna Zielińska","Zie"),T("t5","Barbara Lis","Lis"),T("t6","Piotr Malinowski","Mal"),T("t7","Agnieszka Kaczmarek","Kcz"),T("t8","Tomasz Bąk","Bąk",[0,1,2,3,4,5,6,7]),T("t9","ks. Tadeusz Dąbrowski","Dąb",[37,38,39]),T("t10","Iwona Lewandowska","Lew"),T("t11","Stanisław Woźniak","Woź")],
     classes: [{id:"c1",name:"1a"},{id:"c2",name:"1b"},{id:"c3",name:"2a"},{id:"c4",name:"2b"},{id:"c5",name:"3a"},{id:"c6",name:"3b"}],
     activities: [A("a1","c1","Edukacja wczesnoszkolna","t1",15),A("a2","c1","Rewalidacja","t10",2),A("a3","c1","Religia","t9",2),A("a4","c1","WF","t8",3),A("a5","c2","Edukacja wczesnoszkolna","t2",15),A("a6","c2","Rewalidacja","t10",2),A("a7","c2","Religia","t9",2),A("a8","c2","WF","t8",3),A("a9","c3","Edukacja wczesnoszkolna","t3",15),A("a10","c3","Rewalidacja","t11",2),A("a11","c3","Religia","t9",2),A("a12","c3","WF","t8",3),A("a13","c4","Edukacja wczesnoszkolna","t4",15),A("a14","c4","Rewalidacja","t11",2),A("a15","c4","Religia","t9",2),A("a16","c4","WF","t8",3),A("a17","c5","J. polski","t5",5),A("a18","c5","Matematyka","t6",5),A("a19","c5","Przyroda","t5",2),A("a20","c5","Informatyka","t11",1),A("a21","c5","Plastyka","t7",1),A("a22","c5","Technika","t7",1),A("a23","c5","Muzyka","t7",1),A("a24","c5","WF","t8",3),A("a25","c5","Religia","t9",2),A("a26","c5","Rewalidacja","t10",2),A("a27","c6","J. polski","t5",5),A("a28","c6","Matematyka","t6",5),A("a29","c6","Przyroda","t5",2),A("a30","c6","Informatyka","t11",1),A("a31","c6","Plastyka","t7",1),A("a32","c6","Technika","t7",1),A("a33","c6","Muzyka","t7",1),A("a34","c6","WF","t8",3),A("a35","c6","Religia","t9",2),A("a36","c6","Rewalidacja","t11",2)],
@@ -930,6 +934,17 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
       var slotTaken = others.length > 0;
       if (!slotTaken && arr(loadC, cid)[d] >= settings.classMaxPerDay) return false;
     }
+    /* v6.32: kolizja sal — w danej sali w danym slocie może być tylko JEDNA klasa (uczniowie siedzą w sali macierzystej; nauczyciel przychodzi) */
+    var rId = effRoomId(L);
+    if (rId){
+      var roomBusy = (atSlot[s] || []).filter(function(X){ return X.id !== L.id && effRoomId(X) === rId; });
+      for (var rb = 0; rb < roomBusy.length; rb++){
+        var RB = roomBusy[rb];
+        var sameCls = false;
+        for (var ri2 = 0; ri2 < L.classIds.length; ri2++) if (RB.classIds.indexOf(L.classIds[ri2]) >= 0){ sameCls = true; break; }
+        if (!sameCls) return false;
+      }
+    }
     return true;
   }
   function conflictsAt(U, s2){
@@ -940,6 +955,13 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
       if (U.teacherId && x.teacherId === U.teacherId){ out.push(x); return; }
       for (var i = 0; i < U.classIds.length; i++){
         if (x.classIds.indexOf(U.classIds[i]) >= 0 && classClash(lk, kindL(x), U.group, x.group)){ out.push(x); return; }
+      }
+      /* v6.32: ta sama sala, inna klasa */
+      var rU = effRoomId(U), rX = effRoomId(x);
+      if (rU && rX && rU === rX){
+        var sh = false;
+        for (var j = 0; j < U.classIds.length; j++) if (x.classIds.indexOf(U.classIds[j]) >= 0){ sh = true; break; }
+        if (!sh){ out.push(x); return; }
       }
     });
     return out;
@@ -1121,6 +1143,21 @@ function findViolations(ls, teachers, classes, placement, settings){
     if (clash) errs.push("Klasa " + cNm(cid) + " ma dwie lekcje naraz (" + DAYS[dd] + ", godz. " + (hh + 1) + ")");
     var tracks = rewTracksOf(cM[cid]);
     if (rewN > tracks) errs.push("Klasa " + cNm(cid) + ": " + rewN + " zajęć rewalidacji naraz, a torów: " + tracks + " (" + DAYS[dd] + ", godz. " + (hh + 1) + ")");
+  }
+  /* v6.32: kolizja sal — jedna sala = jedna klasa w slocie */
+  var byRoomSlot = {};
+  ls.forEach(function(Lr){ var sr = placement[Lr.id]; if (sr == null) return; var rr = effRoomId(Lr); if (!rr) return; var k = rr + "|" + sr; (byRoomSlot[k] = byRoomSlot[k] || []).push(Lr); });
+  for (var rk in byRoomSlot){
+    var rlist = byRoomSlot[rk], rslot = +rk.split("|")[1], rd = Math.floor(rslot / NH), rh = rslot % NH;
+    var bad = false;
+    for (var ri = 0; ri < rlist.length && !bad; ri++){
+      for (var rj = ri + 1; rj < rlist.length && !bad; rj++){
+        var shR = false;
+        for (var rc = 0; rc < rlist[ri].classIds.length; rc++){ if (rlist[rj].classIds.indexOf(rlist[ri].classIds[rc]) >= 0){ shR = true; break; } }
+        if (!shR) bad = true;
+      }
+    }
+    if (bad) errs.push("Sala " + roomName(rk.split("|")[0]) + " zajęta przez różne klasy naraz (" + DAYS[rd] + ", godz. " + (rh + 1) + ")");
   }
   for (var tk in loadT) for (var dd = 0; dd < 5; dd++) if (loadT[tk][dd] > settings.teacherMaxPerDay) errs.push(tNm(tk) + " ma " + loadT[tk][dd] + " lekcji w " + DAYS[dd] + " (limit " + settings.teacherMaxPerDay + ")");
   for (var ck in loadC) for (var dc = 0; dc < 5; dc++) if (loadC[ck][dc] > settings.classMaxPerDay) errs.push("Klasa " + cNm(ck) + " ma " + loadC[ck][dc] + " lekcji w " + DAYS[dc] + " (limit " + settings.classMaxPerDay + ")");
@@ -1675,6 +1712,10 @@ function flash(text, kind){
 
 /* ==================== render ==================== */
 function setTab(t){ tab = t; render(); }
+function effRoomId(L){ return L.roomId || cRoomOf({ classId: L.classIds[0] }); } /* v6.32: sala zajęć, a gdy pusta — sala macierzysta klasy */
+function roomName(rid){ var r = null; (S.rooms || []).forEach(function(x){ if (x.id === rid) r = x; }); return r ? r.name : (rid || '?'); }
+function cRoomOf(a){ var c = null; S.classes.forEach(function(x){ if (x.id === a.classId) c = x; }); return c ? (c.roomId || '') : ''; } /* v6.32: sala macierzysta klasy zajęć */
+function roomOpts(sel){ var o = '<option value=""' + (!sel ? ' selected' : '') + '>— bez sali —</option>'; o += (S.rooms || []).map(function(r){ return '<option value="' + r.id + '"' + (r.id === sel ? ' selected' : '') + '>' + esc(r.name) + '</option>'; }).join(''); return o; } /* v6.32 */
 function opts(list, val, label){
   var has = list.some(function(x){ return x.id === val; });
   var h = "";
@@ -1742,6 +1783,7 @@ function renderDane(){
   if (!S.classes.length) h += '<p class="hint">Brak oddziałów — dodaj pierwszy.</p>';
   S.classes.forEach(function(c){
     h += '<div class="row"><input class="inp" style="flex:1" value="' + esc(c.name) + '" onchange="renClass(\'' + c.id + '\',this.value)">'
+       + '<select class="inp" style="max-width:130px" title="Sala macierzysta oddziału — uczniowie siedzą w niej na co dzień; nauczyciele przemieszczają się na zajęcia do innych sal" onchange="setClassRoom(\'" + c.id + "\',this.value)">' + roomOpts(c.roomId) + '</select>'
        + '<span class="badge">' + (hByC[c.id] || 0) + ' h/tydz.</span>'
        + '<button class="del" title="Usuń" onclick="delClass(\'' + c.id + '\')">✕</button></div>';
   });
@@ -1757,6 +1799,14 @@ function renderDane(){
        + '<button class="del" title="Usuń" onclick="delTeacher(\'' + t.id + '\')">✕</button></div>';
   });
   h += '<div class="row"><input id="newTeacherName" class="inp" style="flex:1" placeholder="np. Jan Kowalski"><input id="newTeacherShort" class="inp" style="width:58px;text-align:center" placeholder="skrót"><button class="btn" onclick="addTeacher()">+ Dodaj</button></div>';
+  h += "</div></div>";
+  h += '<div class="card"><div class="hd">🏫 Sale / gabinety <span class="hint" style="font-weight:400">— uczniowie mają salę macierzystą (przy oddziale); nauczyciel przemieszcza się na zajęcia (sala przy zajęciach)</span></div><div class="bd">';
+  if (!S.rooms.length) h += '<p class="hint">Brak sal — dodaj pierwszą (np. „Gabinet logopedy").</p>';
+  S.rooms.forEach(function(r){
+    h += '<div class="row"><input class="inp" style="flex:1" value="' + esc(r.name) + '" onchange="renRoom(\'' + r.id + '\',this.value)">'
+       + '<button class="del" title="Usuń" onclick="delRoom(\'' + r.id + '\')">✕</button></div>';
+  });
+  h += '<div class="row"><input id="newRoomName" class="inp" style="flex:1" placeholder="np. Gabinet logopedy"><button class="btn" onclick="addRoom()">+ Dodaj</button></div>';
   h += "</div></div></div>";
   h += '<div class="card"><div class="hd">📚 Zajęcia — kto, co i ile godzin prowadzi w danej klasie</div><div class="bd">';
   if (!S.activities.length) h += '<p class="hint">Brak zajęć — dodaj pierwszy wiersz albo skorzystaj z importu poniżej.</p>';
@@ -1776,6 +1826,10 @@ function renderDane(){
        + "</select>"
        + '<input class="inp" style="width:70px" placeholder="grupa" title="Grupa (np. a, b, chł., dz.) — zajęcia tej samej klasy z różnymi grupami mogą być równolegle" value="' + esc(a.group || "") + '" onchange="setAct(\'' + a.id + '\',\'group\',this.value)">'
        + '<input class="inp" style="width:86px" placeholder="↔ powiązanie" title="Powiązanie: zajęcia z tą samą etykietą (np. REL) zawsze są na tej samej godzinie i mogą nakładać się w klasie (np. religia + świetlica równolegle)" value="' + esc(a.link || "") + '" onchange="setAct(\'' + a.id + '\',\'link\',this.value)">'
+       + '<select class="inp" style="max-width:130px" title="Sala zajęć — puste = sala macierzysta klasy (uczniowie zostają, nauczyciel przychodzi)" onchange="setAct(\'' + a.id + '\',\'roomId\',this.value)">'
+       + '<option value=""' + (!a.roomId ? " selected" : "") + '>— sala klasy —</option>'
+       + (S.rooms || []).map(function(r){ return '<option value="' + r.id + '"' + (a.roomId === r.id ? " selected" : "") + '>' + esc(r.name) + "</option>"; }).join("")
+       + "</select>"
        + '<input class="inp" type="number" min="1" max="20" style="text-align:center" value="' + a.hours + '" onchange="setAct(\'' + a.id + '\',\'hours\',this.value)">'
        + '<button class="del" onclick="delAct(\'' + a.id + '\')">✕</button></div>';
   });
@@ -1895,6 +1949,18 @@ function delTeacher(id){
   if (ogrT === id) ogrT = "";
   save(); render();
 }
+function addRoom(){
+  var v = document.getElementById('newRoomName').value.trim();
+  if (!v) return;
+  S.rooms.push({ id: nextId(S.rooms, 'r'), name: v }); save(); render();
+}
+function renRoom(id, v){ S.rooms.forEach(function(r){ if (r.id === id) r.name = v; }); save(); render(); }
+function delRoom(id){
+  if (S.activities.some(function(a){ return a.roomId === id; }) || S.classes.some(function(c){ return c.roomId === id; })){ flash('Nie można usunąć — sala jest przypisana do zajęć lub oddziału. Najpierw zmień przypisanie.', 'err'); return; }
+  S.rooms = S.rooms.filter(function(r){ return r.id !== id; });
+  save(); render();
+}
+function setClassRoom(id, v){ S.classes.forEach(function(c){ if (c.id === id) c.roomId = v; }); save(); render(); }
 function addAct(){
   if (!S.classes.length || !S.teachers.length){ flash("Najpierw dodaj przynajmniej jedną klasę i jednego nauczyciela.", "warn"); return; }
   S.activities.push({ id: nextId(S.activities, "a"), classId: S.classes[0].id, teacherId: S.teachers[0].id, subject: "", hours: 1 }); save(); render();
@@ -2614,13 +2680,15 @@ function renderPlan(){
       relC.forEach(function(L){
         h += '<div class="chip c' + colorIdx(L.subject) + (sel === L.id ? " sel" : "") + '" onclick="event.stopPropagation();chipClick(\'' + L.id + '\')" oncontextmenu="unassign(\'' + L.id + '\',event)" title="' + esc(L.subject) + (L.link ? " (↔ " + L.link + ")" : "") + " — prawy klik usuwa z planu\">"
            + '<span class="subj">' + esc(L.subject) + "</span>"
-           + '<span class="sub">' + esc(viewMode === "class" ? tShort(L.teacherId) : L.classIds.map(cName).join("+")) + "</span></div>";
+           + '<span class="sub">' + esc(viewMode === "class" ? tShort(L.teacherId) : L.classIds.map(cName).join("+")) + "</span>"
+           + (function(){ var r = effRoomId(L); var home = cRoomOf({ classId: L.classIds[0] }); if (r && r !== home) return ' <span class="sub" title="Sala">📍' + esc(roomName(r)) + "</span>"; return ""; })() + "</div>";
       });
       h += "</td>";
     }
     h += "</tr>";
   }
   h += "</table></div>";
+  h += '<p class="hint">📍 przy zajęciach = sala inna niż macierzysta klasy (uczniowie idą do gabinetu, nauczyciel przychodzi do klasy). Jedna sala może mieć w danej godzinie tylko jedną klasę.</p>';
   h += '<p class="hint">Klik lekcja → wolne pole = przeniesienie • lekcja → lekcja = zamiana • prawy klik = usuń z planu. Program pilnuje dostępności nauczycieli, podwójnych lekcji i limitów dziennych, a także zasad z wytycznych: zablokowane godziny (siatka w Zasadach planu), okienka, bloki AUT, powiązania tej samej godziny i pary przedmiotów.</p>';
   return h;
 }
