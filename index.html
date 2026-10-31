@@ -170,7 +170,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.32.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.33.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -2634,7 +2634,7 @@ function applyPlacement(np, okText){
 function cellClick(s){
   var ls = lessons(), placement = S.placement, bySlot = lessonsBySlot(ls, placement);
   var eff = viewSel;
-  var hereList = (bySlot[s] || []).filter(function(x){ return viewMode === "class" ? x.classIds.indexOf(eff) >= 0 : x.teacherId === eff; });
+  var hereList = (bySlot[s] || []).filter(function(x){ return viewMode === "class" ? x.classIds.indexOf(eff) >= 0 : viewMode === "teacher" ? x.teacherId === eff : x.studentId === eff; });
   var here = hereList[0];
   if (sel == null){ if (here){ sel = here.id; render(); } return; }
   var SL = null; ls.forEach(function(l){ if (l.id === sel) SL = l; });
@@ -2668,11 +2668,13 @@ function renderPlan(){
   var ls = lessons(), placement = S.placement;
   var unplaced = ls.filter(function(l){ return placement[l.id] == null; });
   var placed = ls.length - unplaced.length;
-  var ents = viewMode === "class" ? sortedClasses() : sortedTeachers();
+  var allStudents = [];
+  S.classes.forEach(function(c){ (c.students || []).forEach(function(st){ allStudents.push({ id: st.id, name: st.name + ' (' + c.name + ')' }); }); });
+  var ents = viewMode === "class" ? sortedClasses() : viewMode === "teacher" ? sortedTeachers() : allStudents;
   var h = '<div class="row">';
-  h += '<select class="inp" onchange="setViewMode(this.value)"><option value="class"' + (viewMode === "class" ? " selected" : "") + '>Widok: oddział</option><option value="teacher"' + (viewMode === "teacher" ? " selected" : "") + ">Widok: nauczyciel</option></select>";
+  h += '<select class="inp" onchange="setViewMode(this.value)"><option value="class"' + (viewMode === "class" ? " selected" : "") + '>Widok: oddział</option><option value="teacher"' + (viewMode === "teacher" ? " selected" : "") + ">Widok: nauczyciel</option><option value=\"student\"' + (viewMode === \"student\" ? \" selected\" : \"\") + '>Widok: uczeń (1:1)</option></select>";
   if (!ents.length){
-    h += '<span class="hint">Brak ' + (viewMode === "class" ? "oddziałów" : "nauczycieli") + " — zacznij od zakładki Dane.</span></div>";
+    h += '<span class="hint">Brak ' + (viewMode === "class" ? "oddziałów" : viewMode === "teacher" ? "nauczycieli" : "uczniów") + " — zacznij od zakładki Dane.</span></div>";
     return h;
   }
   var eff = ents.some(function(e){ return e.id === viewSel; }) ? viewSel : ents[0].id;
@@ -2686,7 +2688,7 @@ function renderPlan(){
   if (unplaced.length){
     h += '<div class="unplaced"><b>📦 Nieprzypisane (' + unplaced.length + ") — kliknij lekcję, potem wolne pole w planie:</b><div>";
     unplaced.forEach(function(L){
-      h += '<button class="chip c' + colorIdx(L.subject) + (sel === L.id ? " sel" : "") + '" onclick="chipClick(\'' + L.id + '\')">' + esc(L.subject) + " • " + esc(cName(L.classIds[0])) + " • " + esc(tShort(L.teacherId)) + "</button>";
+      h += '<button class="chip c' + colorIdx(L.subject) + (sel === L.id ? " sel" : "") + '" onclick="chipClick(\'' + L.id + '\')">' + esc(L.subject) + " • " + esc(cName(L.classIds[0])) + (L.studentId ? " • 👤" + esc((studentsOf(L.classIds[0]).filter(function(st){ return st.id === L.studentId; })[0] || {}).name || "") : "") + " • " + esc(tShort(L.teacherId)) + "</button>";
     });
     h += "</div></div>";
   }
@@ -2701,8 +2703,8 @@ function renderPlan(){
   var lt = lessonTimes();
   var dayLoads = [0, 0, 0, 0, 0];
   for (var s in bySlot){
-    var rel = bySlot[s].filter(function(x){ return viewMode === "class" ? x.classIds.indexOf(eff) >= 0 : x.teacherId === eff; });
-    if (rel.length) dayLoads[Math.floor(s / NH)] += (viewMode === "class" ? 1 : rel.length);
+    var rel = bySlot[s].filter(function(x){ return viewMode === "class" ? x.classIds.indexOf(eff) >= 0 : viewMode === "teacher" ? x.teacherId === eff : x.studentId === eff; });
+    if (rel.length) dayLoads[Math.floor(s / NH)] += (viewMode === "class" || viewMode === "student" ? 1 : rel.length);
   }
   h += '<div style="overflow-x:auto"><table class="plan"><tr><th></th>';
   for (var i = 0; i < NH; i++) h += "<th>lek. " + (i + 1) + "<br><span class='sub'>" + esc(lt[i]) + "</span></th>";
@@ -2711,13 +2713,13 @@ function renderPlan(){
     h += '<tr><td class="day">' + DAYS[d] + '<br><span class="sub' + (dayLoads[d] > S.settings.classMaxPerDay ? " err" : "") + '">' + dayLoads[d] + " lek.</span></td>";
     for (var hh = 0; hh < NH; hh++){
       var s2 = d * NH + hh;
-      var relC = (bySlot[s2] || []).filter(function(x){ return viewMode === "class" ? x.classIds.indexOf(eff) >= 0 : x.teacherId === eff; });
+      var relC = (bySlot[s2] || []).filter(function(x){ return viewMode === "class" ? x.classIds.indexOf(eff) >= 0 : viewMode === "teacher" ? x.teacherId === eff : x.studentId === eff; });
       var bl = S.settings.blockedSlots.indexOf(s2) >= 0;
       h += '<td onclick="cellClick(' + s2 + ')"' + (bl ? ' style="background:repeating-linear-gradient(45deg,transparent,transparent 5px,rgba(148,163,184,.18) 5px,rgba(148,163,184,.18) 10px)"' : '') + '>';
       relC.forEach(function(L){
         h += '<div class="chip c' + colorIdx(L.subject) + (sel === L.id ? " sel" : "") + '" onclick="event.stopPropagation();chipClick(\'' + L.id + '\')" oncontextmenu="unassign(\'' + L.id + '\',event)" title="' + esc(L.subject) + (L.link ? " (↔ " + L.link + ")" : "") + " — prawy klik usuwa z planu\">"
            + '<span class="subj">' + esc(L.subject) + "</span>"
-           + '<span class="sub">' + esc(viewMode === "class" ? tShort(L.teacherId) : L.classIds.map(cName).join("+")) + "</span>"
+           + '<span class="sub">' + esc(viewMode === "class" ? tShort(L.teacherId) : viewMode === "teacher" ? L.classIds.map(cName).join("+") : cName(L.classIds[0])) + "</span>"
            + (function(){ var r = effRoomId(L); var home = cRoomOf({ classId: L.classIds[0] }); if (r && r !== home) return ' <span class="sub" title="Sala">📍' + esc(roomName(r)) + "</span>"; return ""; })() + "</div>";
       });
       h += "</td>";
