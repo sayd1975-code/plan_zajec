@@ -169,7 +169,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.24.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.25.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -2835,7 +2835,7 @@ function downloadDocx(){
   flash("📄 Zapisano plik .docx — otworzysz go w Wordzie.", "ok");
 }
 /* ==================== v6.18: zbiorcza plansza tygodnia ==================== */
-function teacherInits(){
+function teacherInits(onlyUsed){ /* v6.25: konflikty inicjałów liczone TYLKO wśród pokazanych nauczycieli (used); wydłużenie skrótu maks. do 4 znaków; nierozróżnialne nazwiska (np. identyczne) zostają przy 2-znakowej bazie — skrót nigdy nie ciągnie całego nazwiska (przy dwóch osobach "B. P." obie zostają "BP") */
   function words(n){ return String(n || "").replace(/\./g, " ").split(/\s+/).filter(Boolean); }
   function surOf(w){ return w.length >= 2 ? w[w.length - 1] : (w[0] || ""); }
   var map = {}, byBase = {};
@@ -2843,14 +2843,15 @@ function teacherInits(){
     var w = words(t.name);
     var b = w.length >= 2 ? w[0][0].toUpperCase() + w[w.length - 1][0].toUpperCase() : (w.length ? w[0].slice(0, 2).toUpperCase() : "??");
     map[t.id] = b;
-    (byBase[b] = byBase[b] || []).push(t);
+    if (!onlyUsed || onlyUsed[t.id]) (byBase[b] = byBase[b] || []).push(t);
   });
   Object.keys(byBase).forEach(function(b){
     var g = byBase[b];
     if (g.length < 2) return;
-    var len = 2;
-    while (len <= 8){
-      var seen = {}, ok = true;
+    var len = 2, ok = false;
+    while (len <= 4){
+      var seen = {};
+      ok = true;
       g.forEach(function(t){
         var s = surOf(words(t.name)).slice(0, len).toUpperCase();
         if (seen[s]) ok = false; else seen[s] = true;
@@ -2858,13 +2859,16 @@ function teacherInits(){
       if (ok) break;
       len++;
     }
+    if (!ok) return; /* nierozróżnialne prefiksy (np. identyczne nazwiska) — zostaje krótka baza */
     g.forEach(function(t){ map[t.id] = words(t.name)[0][0].toUpperCase() + surOf(words(t.name)).slice(0, len); });
   });
   return map;
 }
 function planszaZbiorczaHtml(){
   var ls = lessons(), placement = S.placement, bySlot = lessonsBySlot(ls, placement);
-  var lt = lessonTimes(), inits = teacherInits();
+  var used = {};
+  ls.forEach(function(L){ if (L.teacherId) used[L.teacherId] = true; });
+  var lt = lessonTimes(), inits = teacherInits(used); /* v6.25: inicjały liczone wśród nauczycieli z lekcjami */
   var tints = ["#fef3c7", "#e0f2fe", "#d1fae5", "#ede9fe", "#ffe4e6", "#ecfccb", "#ffedd5", "#cffafe", "#fae8ff", "#ccfbf1"];
   function hhmm(t){ return t.replace(/^(\d):/, "0$1:") + "-" + endOfLesson(t).replace(/^(\d):/, "0$1:"); }
   var nCols = S.classes.length + 1;
@@ -2947,12 +2951,12 @@ function a1Classes(){
 /* dane planszy A1: klasy w szkolnej kolejności, nauczyciele z ułożonymi lekcjami, teksty komórek */
 function a1Build(){
   var ls = lessons(), placement = S.placement, bySlot = lessonsBySlot(ls, placement);
-  var inits = teacherInits();
+  var used = {};
+  ls.forEach(function(L){ if (L.teacherId) used[L.teacherId] = true; });
+  var inits = teacherInits(used); /* v6.25: inicjały liczone wśród nauczycieli z lekcjami */
   var classes = a1Classes();
   var classCodes = {};
   classes.forEach(function(c){ classCodes[c.id] = schoolClassCode(c.name); });
-  var used = {};
-  ls.forEach(function(L){ if (L.teacherId) used[L.teacherId] = true; });
   function words(t){ return String(t.name || "").replace(/\./g, " ").split(/\s+/).filter(Boolean); }
   function surname(t){ var w = words(t); return w.length ? w[w.length - 1] : ""; }
   function firstIni(t){ var w = words(t); return w.length > 1 ? w[0][0].toUpperCase() + ". " : ""; }
@@ -3197,7 +3201,7 @@ function renderEks(){
   h += '<p class="hint">' + (eksMode === "csv" ? "CSV ze średnikami — Excel otworzy w kolumnach (jeśli nie, użyj Dane → Tekst jako kolumny)." : "Tekst o stałej szerokości kolumn — wklejasz do Worda/Excela/maila. Skróty przedmiotów z pierwszych liter.") + "</p>";
   h += '<p class="hint">🖼️ Plansze A3/A2: otwierają się w nowej karcie — po jednym wielkim planie na oddział, do wydruku na korytarz (duże litery, pełne nazwiska). Najlepiej drukować z komputera.</p>';
   h += '<p class="hint">📄 Word (.docx): pobiera plik z planami wg widoku powyżej (klasy albo nauczyciele; przy CSV — plany klas). Otworzysz i zedytujesz go w Wordzie; PDF zrobisz z plansz A3/A2 (drukuj → zapisz jako PDF).</p>';
-  h += '<p class="hint">🗓️ Zbiorcza (tydzień): jedna plansza dla całej szkoły — godziny w wierszach, oddziały w kolumnach, dni w pasach; w komórce skrót przedmiotu i inicjały nauczyciela (przy dublu druga litera nazwiska). Najlepiej drukować z komputera.</p>';
+  h += '<p class="hint">🗓️ Zbiorcza (tydzień): jedna plansza dla całej szkoły — godziny w wierszach, oddziały w kolumnach, dni w pasach; w komórce skrót przedmiotu i inicjały nauczyciela (przy dublu krótkie rozróżnienie, maks. 4 znaki). Najlepiej drukować z komputera.</p>';
   h += '<p class="hint">📊 A1 — Excel i 🖼️ A1 — wydruk (v6.20): plansza w konwencji szkolnego szablonu A1 — kolumny oddziałów (szkolne kody: 1a, 2aA, 5z…), Świetlica i kolumny nauczycieli (nagłówki: inicjały nauczyciela jak w Zbiorczej; w komórce kod klasy, którą wtedy prowadzą), godziny wierszami. Excel: plik .xlsx do dalszej edycji; wydruk: A1 poziomo. Ułożony plan wypełnia wszystko automatycznie.</p>';
   h += "</div></div>";
   return h;
