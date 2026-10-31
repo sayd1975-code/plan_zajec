@@ -1783,6 +1783,11 @@ function renderDane(){
        + '<select class="inp" style="max-width:130px" title="Sala macierzysta oddziału — uczniowie siedzą w niej na co dzień; nauczyciele przemieszczają się na zajęcia do innych sal" onchange="setClassRoom(\'" + c.id + "\',this.value)">' + roomOpts(c.roomId) + '</select>'
        + '<span class="badge">' + (hByC[c.id] || 0) + ' h/tydz.</span>'
        + '<button class="del" title="Usuń" onclick="delClass(\'' + c.id + '\')">✕</button></div>';
+    (c.students || []).forEach(function(st){
+      h += '<div class="row" style="padding-left:18px"><input class="inp" style="flex:1" value="' + esc(st.name) + '" onchange="renStudent(\'' + c.id + '\',\'' + st.id + '\',this.value)">'
+         + '<button class="del" title="Usuń ucznia" onclick="delStudent(\'' + c.id + '\',\'' + st.id + '\')">✕</button></div>';
+    });
+    h += '<div class="row" style="padding-left:18px"><input id="newStudentName_' + c.id + '" class="inp" style="flex:1" placeholder="imię i nazwisko ucznia (do zajęć 1:1)"><button class="btn2" onclick="addStudent(\'' + c.id + '\')">+ uczeń</button></div>';
   });
   h += '<div class="row"><input id="newClassName" class="inp" style="flex:1" placeholder="np. 4a"><button class="btn" onclick="addClass()">+ Dodaj</button></div>';
   h += "</div></div>";
@@ -1823,6 +1828,10 @@ function renderDane(){
        + "</select>"
        + '<input class="inp" style="width:70px" placeholder="grupa" title="Grupa (np. a, b, chł., dz.) — zajęcia tej samej klasy z różnymi grupami mogą być równolegle" value="' + esc(a.group || "") + '" onchange="setAct(\'' + a.id + '\',\'group\',this.value)">'
        + '<input class="inp" style="width:86px" placeholder="↔ powiązanie" title="Powiązanie: zajęcia z tą samą etykietą (np. REL) zawsze są na tej samej godzinie i mogą nakładać się w klasie (np. religia + świetlica równolegle)" value="' + esc(a.link || "") + '" onchange="setAct(\'' + a.id + '\',\'link\',this.value)">'
+       + '<select class="inp" style="max-width:120px" title="Uczeń (zajęcia indywidualne 1:1) — puste = cała klasa" onchange="setActStudent(\'' + a.id + '\',this.value)">'
+       + '<option value=""' + (!a.studentId ? " selected" : "") + '>— cała klasa —</option>'
+       + studentsOf(a.classId).map(function(st){ return '<option value="' + st.id + '"' + (a.studentId === st.id ? " selected" : "") + '>' + esc(st.name) + "</option>"; }).join("")
+       + "</select>"
        + '<select class="inp" style="max-width:130px" title="Sala zajęć — puste = sala macierzysta klasy (uczniowie zostają, nauczyciel przychodzi)" onchange="setAct(\'' + a.id + '\',\'roomId\',this.value)">'
        + '<option value=""' + (!a.roomId ? " selected" : "") + '>— sala klasy —</option>'
        + (S.rooms || []).map(function(r){ return '<option value="' + r.id + '"' + (a.roomId === r.id ? " selected" : "") + '>' + esc(r.name) + "</option>"; }).join("")
@@ -1946,6 +1955,21 @@ function delTeacher(id){
   if (ogrT === id) ogrT = "";
   save(); render();
 }
+function addStudent(cid){
+  var el = document.getElementById('newStudentName_' + cid);
+  var v = el ? el.value.trim() : '';
+  if (!v) return;
+  var c = null; S.classes.forEach(function(x){ if (x.id === cid) c = x; });
+  if (!c) return;
+  c.students.push({ id: nextId(c.students, 's'), name: v }); save(); render();
+}
+function renStudent(cid, sid, v){ S.classes.forEach(function(c){ if (c.id !== cid) return; (c.students || []).forEach(function(st){ if (st.id === sid) st.name = v; }); }); save(); render(); }
+function delStudent(cid, sid){
+  if (S.activities.some(function(a){ return a.studentId === sid; })){ flash('Nie można usunąć — uczeń ma przypisane zajęcia indywidualne. Najpierw usuń je z listy zajęć.', 'err'); return; }
+  S.classes.forEach(function(c){ if (c.id === cid) c.students = (c.students || []).filter(function(st){ return st.id !== sid; }); });
+  save(); render();
+}
+function setActStudent(id, v){ var a = null; S.activities.forEach(function(x){ if (x.id === id) a = x; }); if (!a) return; a.studentId = v; prunePlacement(); save(); render(); }
 function addRoom(){
   var v = document.getElementById('newRoomName').value.trim();
   if (!v) return;
