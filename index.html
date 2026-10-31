@@ -169,7 +169,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.23.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.24.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -3146,7 +3146,7 @@ function planszaA1Html(){
     + "<table><tr><th class=\"hr\">GODZ.</th>";
   d.classes.forEach(function(c){ body += "<th>" + esc(d.classCodes[c.id]) + "</th>"; });
   body += '<th class="sw">ŚWIETLICA<br>SZKOLNA</th>';
-  d.teachers.forEach(function(t){ body += "<th class=\"sw\">" + esc(d.firstIni(t) + d.surname(t)) + "</th>"; });
+  d.teachers.forEach(function(t){ body += "<th class=\"sw\">" + esc(d.inits[t.id] || "") + "</th>"; }); /* v6.24: inicjały nauczycieli w nagłówkach zamiast pełnych nazwisk (jak w Zbiorczej) */
   body += "</tr>";
   DAYS.forEach(function(dn, di){
     body += '<tr><th class="day" colspan="' + nCols + '">' + dn.toUpperCase() + "</th></tr>";
@@ -3198,7 +3198,7 @@ function renderEks(){
   h += '<p class="hint">🖼️ Plansze A3/A2: otwierają się w nowej karcie — po jednym wielkim planie na oddział, do wydruku na korytarz (duże litery, pełne nazwiska). Najlepiej drukować z komputera.</p>';
   h += '<p class="hint">📄 Word (.docx): pobiera plik z planami wg widoku powyżej (klasy albo nauczyciele; przy CSV — plany klas). Otworzysz i zedytujesz go w Wordzie; PDF zrobisz z plansz A3/A2 (drukuj → zapisz jako PDF).</p>';
   h += '<p class="hint">🗓️ Zbiorcza (tydzień): jedna plansza dla całej szkoły — godziny w wierszach, oddziały w kolumnach, dni w pasach; w komórce skrót przedmiotu i inicjały nauczyciela (przy dublu druga litera nazwiska). Najlepiej drukować z komputera.</p>';
-  h += '<p class="hint">📊 A1 — Excel i 🖼️ A1 — wydruk (v6.20): plansza w konwencji szkolnego szablonu A1 — kolumny oddziałów (szkolne kody: 1a, 2aA, 5z…), Świetlica i kolumny nauczycieli (w komórce kod klasy, którą wtedy prowadzą), godziny wierszami. Excel: plik .xlsx do dalszej edycji; wydruk: A1 poziomo. Ułożony plan wypełnia wszystko automatycznie.</p>';
+  h += '<p class="hint">📊 A1 — Excel i 🖼️ A1 — wydruk (v6.20): plansza w konwencji szkolnego szablonu A1 — kolumny oddziałów (szkolne kody: 1a, 2aA, 5z…), Świetlica i kolumny nauczycieli (nagłówki: inicjały nauczyciela jak w Zbiorczej; w komórce kod klasy, którą wtedy prowadzą), godziny wierszami. Excel: plik .xlsx do dalszej edycji; wydruk: A1 poziomo. Ułożony plan wypełnia wszystko automatycznie.</p>';
   h += "</div></div>";
   return h;
 }
