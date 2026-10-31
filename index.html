@@ -170,7 +170,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.32.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.33.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -227,8 +227,8 @@ function normalize(p){
   if (p.settings.wClassGapDay == null) p.settings.wClassGapDay = 150;
   if (!Array.isArray(p.rooms)) p.rooms = [];
   p.rooms.forEach(function(r){ if (r.id == null) r.id = ""; if (r.name == null) r.name = ""; });
-  p.classes.forEach(function(c){ if (c.rew == null) c.rew = rewFromName(c.name); if (!Array.isArray(c.blocked)) c.blocked = []; if (c.roomId == null) c.roomId = ""; });
-  p.activities.forEach(function(a){ if (a.group == null) a.group = ""; if (a.withClassId == null) a.withClassId = ""; if (a.link == null) a.link = ""; if (a.roomId == null) a.roomId = ""; });
+  p.classes.forEach(function(c){ if (c.rew == null) c.rew = rewFromName(c.name); if (!Array.isArray(c.blocked)) c.blocked = []; if (c.roomId == null) c.roomId = ""; if (!Array.isArray(c.students)) c.students = []; }); /* v6.33: uczniowie w oddziale */
+  p.activities.forEach(function(a){ if (a.group == null) a.group = ""; if (a.withClassId == null) a.withClassId = ""; if (a.link == null) a.link = ""; if (a.roomId == null) a.roomId = ""; if (a.studentId == null) a.studentId = ""; }); /* v6.33: zajęcia 1:1 do ucznia */
   if (!p.placement) p.placement = {};
   /* v6.31: sanacja placement — slot spoza zakresu 0..5*NH-1 (np. z ręcznie edytowanej kopii .json) rozbijał findViolations/renderPlan/softPenalty */
   Object.keys(p.placement).forEach(function(k){ var sv = p.placement[k]; if (typeof sv !== "number" || !isFinite(sv) || sv < 0 || sv >= 5 * NH || Math.floor(sv) !== sv) delete p.placement[k]; });
@@ -284,7 +284,7 @@ function classClash(lk, ok, lg, og){
 }
 function buildLessons(acts){
   var out = [];
-  for (var a of acts){ for (var i = 0; i < a.hours; i++) out.push({ id: a.id + "-" + i, activityId: a.id, classId: a.classId, classIds: [a.classId].concat(a.withClassId ? [a.withClassId] : []), teacherId: a.teacherId, subject: a.subject, kind: kindOf(a), group: a.group || "", link: a.link || "", roomId: a.roomId || "" }); }
+  for (var a of acts){ for (var i = 0; i < a.hours; i++) out.push({ id: a.id + "-" + i, activityId: a.id, classId: a.classId, classIds: [a.classId].concat(a.withClassId ? [a.withClassId] : []), teacherId: a.teacherId, subject: a.subject, kind: kindOf(a), group: a.group || "", link: a.link || "", roomId: a.roomId || "", studentId: a.studentId || "" }); }
   return out;
 }
 function lessons(){ return buildLessons(S.activities); }
@@ -934,6 +934,11 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
       var slotTaken = others.length > 0;
       if (!slotTaken && arr(loadC, cid)[d] >= settings.classMaxPerDay) return false;
     }
+    /* v6.33: uczeń 1:1 — dany uczeń tylko jedna lekcja w slocie */
+    if (L.studentId){
+      var stBusy = (atSlot[s] || []).filter(function(X){ return X.id !== L.id && X.studentId === L.studentId; });
+      if (stBusy.length) return false;
+    }
     /* v6.32: kolizja sal — w danej sali w danym slocie może być tylko JEDNA klasa (uczniowie siedzą w sali macierzystej; nauczyciel przychodzi) */
     var rId = effRoomId(L);
     if (rId){
@@ -956,6 +961,8 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
       for (var i = 0; i < U.classIds.length; i++){
         if (x.classIds.indexOf(U.classIds[i]) >= 0 && classClash(lk, kindL(x), U.group, x.group)){ out.push(x); return; }
       }
+      /* v6.33: ten sam uczeń (1:1) nie może mieć dwóch lekcji naraz */
+      if (U.studentId && x.studentId === U.studentId){ out.push(x); return; }
       /* v6.32: ta sama sala, inna klasa */
       var rU = effRoomId(U), rX = effRoomId(x);
       if (rU && rX && rU === rX){
@@ -1143,6 +1150,15 @@ function findViolations(ls, teachers, classes, placement, settings){
     if (clash) errs.push("Klasa " + cNm(cid) + " ma dwie lekcje naraz (" + DAYS[dd] + ", godz. " + (hh + 1) + ")");
     var tracks = rewTracksOf(cM[cid]);
     if (rewN > tracks) errs.push("Klasa " + cNm(cid) + ": " + rewN + " zajęć rewalidacji naraz, a torów: " + tracks + " (" + DAYS[dd] + ", godz. " + (hh + 1) + ")");
+  }
+  /* v6.33: uczeń 1:1 — max 1 lekcja w slocie */
+  var byStudentSlot = {};
+  ls.forEach(function(Ls){ var ss = placement[Ls.id]; if (ss == null || !Ls.studentId) return; var k2 = Ls.studentId + "|" + ss; (byStudentSlot[k2] = byStudentSlot[k2] || []).push(Ls); });
+  for (var sk in byStudentSlot){
+    if (byStudentSlot[sk].length > 1){
+      var sslot = +sk.split("|")[1], sd = Math.floor(sslot / NH), sh = sslot % NH;
+      errs.push("Uczeń " + studentName(sk.split("|")[0]) + " ma dwie zajęcia 1:1 naraz (" + DAYS[sd] + ", godz. " + (sh + 1) + ")");
+    }
   }
   /* v6.32: kolizja sal — jedna sala = jedna klasa w slocie */
   var byRoomSlot = {};
@@ -1714,6 +1730,8 @@ function flash(text, kind){
 function setTab(t){ tab = t; render(); }
 function effRoomId(L){ return L.roomId || cRoomOf({ classId: L.classIds[0] }); } /* v6.32: sala zajęć, a gdy pusta — sala macierzysta klasy */
 function roomName(rid){ var r = null; (S.rooms || []).forEach(function(x){ if (x.id === rid) r = x; }); return r ? r.name : (rid || '?'); }
+function studentsOf(cid){ var c = null; S.classes.forEach(function(x){ if (x.id === cid) c = x; }); return c ? (c.students || []) : []; } /* v6.33 */
+function studentName(sid){ for (var i = 0; i < S.classes.length; i++){ var st = (S.classes[i].students || []).filter(function(x){ return x.id === sid; })[0]; if (st) return st.name + ' (' + S.classes[i].name + ')'; } return sid || '?'; }
 function cRoomOf(a){ var c = null; S.classes.forEach(function(x){ if (x.id === a.classId) c = x; }); return c ? (c.roomId || '') : ''; } /* v6.32: sala macierzysta klasy zajęć */
 function roomOpts(sel){ var o = '<option value=""' + (!sel ? ' selected' : '') + '>— bez sali —</option>'; o += (S.rooms || []).map(function(r){ return '<option value="' + r.id + '"' + (r.id === sel ? ' selected' : '') + '>' + esc(r.name) + '</option>'; }).join(''); return o; } /* v6.32 */
 function opts(list, val, label){
@@ -1786,6 +1804,11 @@ function renderDane(){
        + '<select class="inp" style="max-width:130px" title="Sala macierzysta oddziału — uczniowie siedzą w niej na co dzień; nauczyciele przemieszczają się na zajęcia do innych sal" onchange="setClassRoom(\'" + c.id + "\',this.value)">' + roomOpts(c.roomId) + '</select>'
        + '<span class="badge">' + (hByC[c.id] || 0) + ' h/tydz.</span>'
        + '<button class="del" title="Usuń" onclick="delClass(\'' + c.id + '\')">✕</button></div>';
+    (c.students || []).forEach(function(st){
+      h += '<div class="row" style="padding-left:18px"><input class="inp" style="flex:1" value="' + esc(st.name) + '" onchange="renStudent(\'' + c.id + '\',\'' + st.id + '\',this.value)">'
+         + '<button class="del" title="Usuń ucznia" onclick="delStudent(\'' + c.id + '\',\'' + st.id + '\')">✕</button></div>';
+    });
+    h += '<div class="row" style="padding-left:18px"><input id="newStudentName_' + c.id + '" class="inp" style="flex:1" placeholder="imię i nazwisko ucznia (do zajęć 1:1)"><button class="btn2" onclick="addStudent(\'' + c.id + '\')">+ uczeń</button></div>';
   });
   h += '<div class="row"><input id="newClassName" class="inp" style="flex:1" placeholder="np. 4a"><button class="btn" onclick="addClass()">+ Dodaj</button></div>';
   h += "</div></div>";
@@ -1826,6 +1849,10 @@ function renderDane(){
        + "</select>"
        + '<input class="inp" style="width:70px" placeholder="grupa" title="Grupa (np. a, b, chł., dz.) — zajęcia tej samej klasy z różnymi grupami mogą być równolegle" value="' + esc(a.group || "") + '" onchange="setAct(\'' + a.id + '\',\'group\',this.value)">'
        + '<input class="inp" style="width:86px" placeholder="↔ powiązanie" title="Powiązanie: zajęcia z tą samą etykietą (np. REL) zawsze są na tej samej godzinie i mogą nakładać się w klasie (np. religia + świetlica równolegle)" value="' + esc(a.link || "") + '" onchange="setAct(\'' + a.id + '\',\'link\',this.value)">'
+       + '<select class="inp" style="max-width:120px" title="Uczeń (zajęcia indywidualne 1:1) — puste = cała klasa" onchange="setActStudent(\'' + a.id + '\',this.value)">'
+       + '<option value=""' + (!a.studentId ? " selected" : "") + '>— cała klasa —</option>'
+       + studentsOf(a.classId).map(function(st){ return '<option value="' + st.id + '"' + (a.studentId === st.id ? " selected" : "") + '>' + esc(st.name) + "</option>"; }).join("")
+       + "</select>"
        + '<select class="inp" style="max-width:130px" title="Sala zajęć — puste = sala macierzysta klasy (uczniowie zostają, nauczyciel przychodzi)" onchange="setAct(\'' + a.id + '\',\'roomId\',this.value)">'
        + '<option value=""' + (!a.roomId ? " selected" : "") + '>— sala klasy —</option>'
        + (S.rooms || []).map(function(r){ return '<option value="' + r.id + '"' + (a.roomId === r.id ? " selected" : "") + '>' + esc(r.name) + "</option>"; }).join("")
@@ -1949,6 +1976,21 @@ function delTeacher(id){
   if (ogrT === id) ogrT = "";
   save(); render();
 }
+function addStudent(cid){
+  var el = document.getElementById('newStudentName_' + cid);
+  var v = el ? el.value.trim() : '';
+  if (!v) return;
+  var c = null; S.classes.forEach(function(x){ if (x.id === cid) c = x; });
+  if (!c) return;
+  c.students.push({ id: nextId(c.students, 's'), name: v }); save(); render();
+}
+function renStudent(cid, sid, v){ S.classes.forEach(function(c){ if (c.id !== cid) return; (c.students || []).forEach(function(st){ if (st.id === sid) st.name = v; }); }); save(); render(); }
+function delStudent(cid, sid){
+  if (S.activities.some(function(a){ return a.studentId === sid; })){ flash('Nie można usunąć — uczeń ma przypisane zajęcia indywidualne. Najpierw usuń je z listy zajęć.', 'err'); return; }
+  S.classes.forEach(function(c){ if (c.id === cid) c.students = (c.students || []).filter(function(st){ return st.id !== sid; }); });
+  save(); render();
+}
+function setActStudent(id, v){ var a = null; S.activities.forEach(function(x){ if (x.id === id) a = x; }); if (!a) return; a.studentId = v; prunePlacement(); save(); render(); }
 function addRoom(){
   var v = document.getElementById('newRoomName').value.trim();
   if (!v) return;
@@ -2597,7 +2639,7 @@ function applyPlacement(np, okText){
 function cellClick(s){
   var ls = lessons(), placement = S.placement, bySlot = lessonsBySlot(ls, placement);
   var eff = viewSel;
-  var hereList = (bySlot[s] || []).filter(function(x){ return viewMode === "class" ? x.classIds.indexOf(eff) >= 0 : x.teacherId === eff; });
+  var hereList = (bySlot[s] || []).filter(function(x){ return viewMode === "class" ? x.classIds.indexOf(eff) >= 0 : viewMode === "teacher" ? x.teacherId === eff : x.studentId === eff; });
   var here = hereList[0];
   if (sel == null){ if (here){ sel = here.id; render(); } return; }
   var SL = null; ls.forEach(function(l){ if (l.id === sel) SL = l; });
@@ -2631,11 +2673,13 @@ function renderPlan(){
   var ls = lessons(), placement = S.placement;
   var unplaced = ls.filter(function(l){ return placement[l.id] == null; });
   var placed = ls.length - unplaced.length;
-  var ents = viewMode === "class" ? sortedClasses() : sortedTeachers();
+  var allStudents = [];
+  S.classes.forEach(function(c){ (c.students || []).forEach(function(st){ allStudents.push({ id: st.id, name: st.name + ' (' + c.name + ')' }); }); });
+  var ents = viewMode === "class" ? sortedClasses() : viewMode === "teacher" ? sortedTeachers() : allStudents;
   var h = '<div class="row">';
-  h += '<select class="inp" onchange="setViewMode(this.value)"><option value="class"' + (viewMode === "class" ? " selected" : "") + '>Widok: oddział</option><option value="teacher"' + (viewMode === "teacher" ? " selected" : "") + ">Widok: nauczyciel</option></select>";
+  h += '<select class="inp" onchange="setViewMode(this.value)"><option value="class"' + (viewMode === "class" ? " selected" : "") + '>Widok: oddział</option><option value="teacher"' + (viewMode === "teacher" ? " selected" : "") + ">Widok: nauczyciel</option><option value=\"student\"' + (viewMode === \"student\" ? \" selected\" : \"\") + '>Widok: uczeń (1:1)</option></select>";
   if (!ents.length){
-    h += '<span class="hint">Brak ' + (viewMode === "class" ? "oddziałów" : "nauczycieli") + " — zacznij od zakładki Dane.</span></div>";
+    h += '<span class="hint">Brak ' + (viewMode === "class" ? "oddziałów" : viewMode === "teacher" ? "nauczycieli" : "uczniów") + " — zacznij od zakładki Dane.</span></div>";
     return h;
   }
   var eff = ents.some(function(e){ return e.id === viewSel; }) ? viewSel : ents[0].id;
@@ -2649,7 +2693,7 @@ function renderPlan(){
   if (unplaced.length){
     h += '<div class="unplaced"><b>📦 Nieprzypisane (' + unplaced.length + ") — kliknij lekcję, potem wolne pole w planie:</b><div>";
     unplaced.forEach(function(L){
-      h += '<button class="chip c' + colorIdx(L.subject) + (sel === L.id ? " sel" : "") + '" onclick="chipClick(\'' + L.id + '\')">' + esc(L.subject) + " • " + esc(cName(L.classIds[0])) + " • " + esc(tShort(L.teacherId)) + "</button>";
+      h += '<button class="chip c' + colorIdx(L.subject) + (sel === L.id ? " sel" : "") + '" onclick="chipClick(\'' + L.id + '\')">' + esc(L.subject) + " • " + esc(cName(L.classIds[0])) + (L.studentId ? " • 👤" + esc((studentsOf(L.classIds[0]).filter(function(st){ return st.id === L.studentId; })[0] || {}).name || "") : "") + " • " + esc(tShort(L.teacherId)) + "</button>";
     });
     h += "</div></div>";
   }
@@ -2664,8 +2708,8 @@ function renderPlan(){
   var lt = lessonTimes();
   var dayLoads = [0, 0, 0, 0, 0];
   for (var s in bySlot){
-    var rel = bySlot[s].filter(function(x){ return viewMode === "class" ? x.classIds.indexOf(eff) >= 0 : x.teacherId === eff; });
-    if (rel.length) dayLoads[Math.floor(s / NH)] += (viewMode === "class" ? 1 : rel.length);
+    var rel = bySlot[s].filter(function(x){ return viewMode === "class" ? x.classIds.indexOf(eff) >= 0 : viewMode === "teacher" ? x.teacherId === eff : x.studentId === eff; });
+    if (rel.length) dayLoads[Math.floor(s / NH)] += (viewMode === "class" || viewMode === "student" ? 1 : rel.length);
   }
   h += '<div style="overflow-x:auto"><table class="plan"><tr><th></th>';
   for (var i = 0; i < NH; i++) h += "<th>lek. " + (i + 1) + "<br><span class='sub'>" + esc(lt[i]) + "</span></th>";
@@ -2674,13 +2718,13 @@ function renderPlan(){
     h += '<tr><td class="day">' + DAYS[d] + '<br><span class="sub' + (dayLoads[d] > S.settings.classMaxPerDay ? " err" : "") + '">' + dayLoads[d] + " lek.</span></td>";
     for (var hh = 0; hh < NH; hh++){
       var s2 = d * NH + hh;
-      var relC = (bySlot[s2] || []).filter(function(x){ return viewMode === "class" ? x.classIds.indexOf(eff) >= 0 : x.teacherId === eff; });
+      var relC = (bySlot[s2] || []).filter(function(x){ return viewMode === "class" ? x.classIds.indexOf(eff) >= 0 : viewMode === "teacher" ? x.teacherId === eff : x.studentId === eff; });
       var bl = S.settings.blockedSlots.indexOf(s2) >= 0;
       h += '<td onclick="cellClick(' + s2 + ')"' + (bl ? ' style="background:repeating-linear-gradient(45deg,transparent,transparent 5px,rgba(148,163,184,.18) 5px,rgba(148,163,184,.18) 10px)"' : '') + '>';
       relC.forEach(function(L){
         h += '<div class="chip c' + colorIdx(L.subject) + (sel === L.id ? " sel" : "") + '" onclick="event.stopPropagation();chipClick(\'' + L.id + '\')" oncontextmenu="unassign(\'' + L.id + '\',event)" title="' + esc(L.subject) + (L.link ? " (↔ " + L.link + ")" : "") + " — prawy klik usuwa z planu\">"
            + '<span class="subj">' + esc(L.subject) + "</span>"
-           + '<span class="sub">' + esc(viewMode === "class" ? tShort(L.teacherId) : L.classIds.map(cName).join("+")) + "</span>"
+           + '<span class="sub">' + esc(viewMode === "class" ? tShort(L.teacherId) : viewMode === "teacher" ? L.classIds.map(cName).join("+") : cName(L.classIds[0])) + "</span>"
            + (function(){ var r = effRoomId(L); var home = cRoomOf({ classId: L.classIds[0] }); if (r && r !== home) return ' <span class="sub" title="Sala">📍' + esc(roomName(r)) + "</span>"; return ""; })() + "</div>";
       });
       h += "</td>";
