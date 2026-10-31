@@ -170,7 +170,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.34.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.35.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -228,7 +228,7 @@ function normalize(p){
   if (!Array.isArray(p.rooms)) p.rooms = [];
   p.rooms.forEach(function(r){ if (r.id == null) r.id = ""; if (r.name == null) r.name = ""; });
   p.classes.forEach(function(c){ if (c.rew == null) c.rew = rewFromName(c.name); if (!Array.isArray(c.blocked)) c.blocked = []; if (c.roomId == null) c.roomId = ""; if (!Array.isArray(c.students)) c.students = []; }); /* v6.33: uczniowie w oddziale */
-  p.activities.forEach(function(a){ if (a.group == null) a.group = ""; if (a.withClassId == null) a.withClassId = ""; if (a.link == null) a.link = ""; if (a.roomId == null) a.roomId = ""; if (a.studentId == null) a.studentId = ""; }); /* v6.33: zajęcia 1:1 do ucznia */
+  p.activities.forEach(function(a){ if (a.group == null) a.group = ""; if (a.withClassId == null) a.withClassId = ""; if (a.link == null) a.link = ""; if (a.roomId == null) a.roomId = ""; if (a.studentId == null) a.studentId = ""; if (a.week == null) a.week = ""; }); /* v6.35: tydzień A/B (puste = oba) */ /* v6.33: zajęcia 1:1 do ucznia */
   if (!Array.isArray(p.duties)) p.duties = []; /* v6.34: dyżury — { id, name, slotsPerWeek } */
   p.duties.forEach(function(d){ if (d.id == null) d.id = ""; if (d.name == null) d.name = ""; if (d.slotsPerWeek == null) d.slotsPerWeek = 1; });
   if (!p.dutyPlacement) p.dutyPlacement = {}; /* v6.34: dutyId -> slot */
@@ -237,6 +237,7 @@ function normalize(p){
   p.duties.forEach(function(d){ if (d.id == null) d.id = ""; if (d.name == null) d.name = ""; if (d.slotsPerWeek == null) d.slotsPerWeek = 1; });
   if (!p.dutyPlacement) p.dutyPlacement = {}; /* v6.34: dutyId -> [slot,...] */
   Object.keys(p.dutyPlacement).forEach(function(k){ var arr = p.dutyPlacement[k]; if (!Array.isArray(arr)) delete p.dutyPlacement[k]; else p.dutyPlacement[k] = arr.filter(function(sv){ return typeof sv === "number" && isFinite(sv) && sv >= 0 && sv < 5 * NH && Math.floor(sv) === sv; }); });
+  if (p.settings.weekAB == null) p.settings.weekAB = false; /* v6.35: rotacja tygodni A/B */
   if (!p.placement) p.placement = {};
   /* v6.31: sanacja placement — slot spoza zakresu 0..5*NH-1 (np. z ręcznie edytowanej kopii .json) rozbijał findViolations/renderPlan/softPenalty */
   Object.keys(p.placement).forEach(function(k){ var sv = p.placement[k]; if (typeof sv !== "number" || !isFinite(sv) || sv < 0 || sv >= 5 * NH || Math.floor(sv) !== sv) delete p.placement[k]; });
@@ -292,10 +293,10 @@ function classClash(lk, ok, lg, og){
 }
 function buildLessons(acts){
   var out = [];
-  for (var a of acts){ for (var i = 0; i < a.hours; i++) out.push({ id: a.id + "-" + i, activityId: a.id, classId: a.classId, classIds: [a.classId].concat(a.withClassId ? [a.withClassId] : []), teacherId: a.teacherId, subject: a.subject, kind: kindOf(a), group: a.group || "", link: a.link || "", roomId: a.roomId || "", studentId: a.studentId || "" }); }
+  for (var a of acts){ for (var i = 0; i < a.hours; i++) out.push({ id: a.id + "-" + i, activityId: a.id, classId: a.classId, classIds: [a.classId].concat(a.withClassId ? [a.withClassId] : []), teacherId: a.teacherId, subject: a.subject, kind: kindOf(a), group: a.group || "", link: a.link || "", roomId: a.roomId || "", studentId: a.studentId || "", week: a.week || "" }); }
   return out;
 }
-function lessons(){ return buildLessons(S.activities); }
+function lessons(wk){ return buildLessons(S.activities.filter(function(a){ return weekMatch({ week: a.week }, wk); })); } /* v6.35: opcjonalny tydzień A/B */
 function tById(){ var m = {}; S.teachers.forEach(function(t){ m[t.id] = t; }); return m; }
 function cById(){ var m = {}; S.classes.forEach(function(c){ m[c.id] = c; }); return m; }
 function tName(id){ var t = tById()[id]; return t ? t.name : (id ? "?" : "—"); }
@@ -1746,9 +1747,10 @@ function flash(text, kind){
 function setTab(t){ tab = t; render(); }
 function effRoomId(L){ return L.roomId || cRoomOf({ classId: L.classIds[0] }); } /* v6.32: sala zajęć, a gdy pusta — sala macierzysta klasy */
 function roomName(rid){ var r = null; (S.rooms || []).forEach(function(x){ if (x.id === rid) r = x; }); return r ? r.name : (rid || '?'); }
+function weekMatch(L, wk){ return !wk || !L.week || L.week === wk; } /* v6.35: pusty tydzień = oba tygodnie */
 function dutyById(id){ var d = null; (S.duties || []).forEach(function(x){ if (x.id === id) d = x; }); return d; } /* v6.34 */
 function dutiesBySlot(dp){ var m = {}; Object.keys(dp || {}).forEach(function(did){ var sl = dp[did]; if (sl == null) return; (m[sl] = m[sl] || []).push(did); }); return m; } /* v6.34 */
-function dutyById(id){ var d = null; (S.duties || []).forEach(function(x){ if (x.id === id) d = x; }); return d; } /* v6.34 */
+function weekMatch(L, wk){ return !wk || !L.week || L.week === wk; } /* v6.35: pusty tydzień = oba tygodnie */
 function dutiesBySlot(dp){ var m = {}; Object.keys(dp || {}).forEach(function(did){ (dp[did] || []).forEach(function(sl){ (m[sl] = m[sl] || []).push(did); }); }); return m; } /* v6.34 */
 function studentsOf(cid){ var c = null; S.classes.forEach(function(x){ if (x.id === cid) c = x; }); return c ? (c.students || []) : []; } /* v6.33 */
 function studentName(sid){ for (var i = 0; i < S.classes.length; i++){ var st = (S.classes[i].students || []).filter(function(x){ return x.id === sid; })[0]; if (st) return st.name + ' (' + S.classes[i].name + ')'; } return sid || '?'; }
@@ -1931,7 +1933,12 @@ function renderDane(){
        + "</select>"
        + '<input class="inp" style="width:70px" placeholder="grupa" title="Grupa (np. a, b, chł., dz.) — zajęcia tej samej klasy z różnymi grupami mogą być równolegle" value="' + esc(a.group || "") + '" onchange="setAct(\'' + a.id + '\',\'group\',this.value)">'
        + '<input class="inp" style="width:86px" placeholder="↔ powiązanie" title="Powiązanie: zajęcia z tą samą etykietą (np. REL) zawsze są na tej samej godzinie i mogą nakładać się w klasie (np. religia + świetlica równolegle)" value="' + esc(a.link || "") + '" onchange="setAct(\'' + a.id + '\',\'link\',this.value)">'
-       + '<select class="inp" style="max-width:120px" title="Uczeń (zajęcia indywidualne 1:1) — puste = cała klasa" onchange="setActStudent(\'' + a.id + '\',this.value)">'
+  var wkSel = '<select class="inp" style="max-width:64px" title="Tydzień A/B — puste = oba tygodnie" onchange="setAct(\'' + a.id + '\',\'week\',this.value)">'
+    + '<option value=""' + (!a.week ? ' selected' : '') + '>oba</option>'
+    + '<option value="A"' + (a.week === 'A' ? ' selected' : '') + '>A</option>'
+    + '<option value="B"' + (a.week === 'B' ? ' selected' : '') + '>B</option></select>';
+  h += wkSel;
+  h += wkSel + '<select class="inp" style="max-width:120px" title="Uczeń (zajęcia indywidualne 1:1) — puste = cała klasa" onchange="setActStudent(\'' + a.id + '\',this.value)">'
        + '<option value=""' + (!a.studentId ? " selected" : "") + '>— cała klasa —</option>'
        + studentsOf(a.classId).map(function(st){ return '<option value="' + st.id + '"' + (a.studentId === st.id ? " selected" : "") + '>' + esc(st.name) + "</option>"; }).join("")
        + "</select>"
@@ -2140,6 +2147,7 @@ function setAct(id, key, val){
   else if (key === "group") a.group = (val || "").trim();
   else if (key === "link") a.link = (val || "").trim();
   else if (key === "withClassId") a.withClassId = (val && val !== a.classId) ? val : "";
+  else if (key === "week") a.week = (val === "A" || val === "B") ? val : ""; /* v6.35 */
   else a[key] = val;
   prunePlacement(); save(); render();
 }
@@ -2492,6 +2500,7 @@ function setLT(i, v){
   lt[i] = m ? (m[1].length === 1 ? "0" + m[1] : m[1]) + ":" + m[2] : lt[i]; /* v6.31: zły format ignorowany — wcześniej "abc" dawało endOfLesson "0:45" */
   S.settings.lessonTimes = lt; save(); render();
 }
+function setWeekAB(v){ S.settings.weekAB = !!v; save(); render(); } /* v6.35 */
 function setLimit(k, v){
   S.settings[k] = Math.max(1, Math.min(NH, parseInt(v) || 7)); save(); render();
 }
@@ -2679,7 +2688,8 @@ function renderOgr(){
   h += '<div class="card"><div class="hd">⚙️ Limity dzienne</div><div class="bd"><div class="row">'
      + '<label class="lbl">Maks. lekcji nauczyciela dziennie:</label><input class="inp" type="number" style="width:70px" value="' + S.settings.teacherMaxPerDay + '" onchange="setLimit(\'teacherMaxPerDay\',this.value)">'
      + '<label class="lbl" style="margin-left:14px">Maks. lekcji klasy dziennie:</label><input class="inp" type="number" style="width:70px" value="' + S.settings.classMaxPerDay + '" onchange="setLimit(\'classMaxPerDay\',this.value)">'
-     + '</div><p class="hint">Zmiana limitów obowiązuje przy kolejnym generowaniu i ruchach ręcznych.</p></div></div>';
+     + '</div><p class="hint">Zmiana limitów obowiązuje przy kolejnym generowaniu i ruchach ręcznych.</p>'
+     + '<div class="row" style="margin-top:8px"><label class="lbl" style="cursor:pointer"><input type="checkbox"' + (S.settings.weekAB ? " checked" : "") + ' onchange="setWeekAB(this.checked)"> Rotacja tygodni <b>A/B</b> — zajęcia w Dane można oznaczyć „tylko A” / „tylko B” (puste = oba); plan pokazuje oba tygodnie obok siebie</label></div></div></div>';
   h += '<div class="card"><div class="hd">⚖️ Wagi kar — co automat omija najmocniej</div><div class="bd">';
   h += '<p class="hint">Im większa waga, tym mocniej „🪄 Wygeneruj automatycznie” omija dany problem. <b>0 = nie liczy się w ogóle</b> (wbudowaną zasadę można tak „wyłączyć”). Reguły własne (miękkie) mają swoje wagi w karcie 📐 powyżej.</p>';
   h += '<div class="row"><span class="lbl" style="min-width:230px">Okienka nauczyciela (za każde ponad limit):</span><input class="inp" type="number" min="0" max="2000" style="width:70px" value="' + S.settings.wTeacherGap + '" onchange="setPenW(\'wTeacherGap\',this.value)"><span class="hint" style="margin:0">domyślnie 150</span></div>';
@@ -2748,7 +2758,7 @@ function setViewMode(v){ viewMode = v; sel = null; viewSel = ""; render(); }
 function setViewSel(v){ viewSel = v; sel = null; render(); }
 function chipClick(id){ sel = (sel === id ? null : id); render(); }
 function runAuto(){
-  var ls = lessons();
+  var ls = lessons(planWeek);
   if (!ls.length){ flash("Najpierw dodaj oddziały, nauczycieli i zajęcia w zakładce Dane.", "warn"); return; }
   var res = autoSchedule(ls, S.teachers, S.classes, S.settings, 25);
   S.placement = res.placement; sel = null; save(); render();
@@ -2794,8 +2804,9 @@ function unassign(id, ev){
   save(); render();
   flash(L0 && L0.link ? "Powiązane lekcje wróciły do nieprzypisanych." : "Lekcja wróciła do nieprzypisanych.", "ok");
 }
+var planWeek = "A"; /* v6.35: aktywny tydzień w widoku planu */
 function renderPlan(){
-  var ls = lessons(), placement = S.placement;
+  var ls = lessons(planWeek), placement = S.placement;
   var unplaced = ls.filter(function(l){ return placement[l.id] == null; });
   var placed = ls.length - unplaced.length;
   var allStudents = [];
@@ -2810,6 +2821,7 @@ function renderPlan(){
   var eff = ents.some(function(e){ return e.id === viewSel; }) ? viewSel : ents[0].id;
   viewSel = eff;
   h += '<select class="inp" onchange="setViewSel(this.value)">' + ents.map(function(e){ return '<option value="' + e.id + '"' + (e.id === eff ? " selected" : "") + ">" + esc(e.name) + "</option>"; }).join("") + "</select>";
+  if (S.settings.weekAB){ h += '<select class="inp" onchange="planWeek=this.value;render()"><option value="A"' + (planWeek === "A" ? " selected" : "") + '>Tydzień A</option><option value="B"' + (planWeek === "B" ? " selected" : "") + '>Tydzień B</option></select>'; } /* v6.35 */
   h += '<button class="btn" onclick="runAuto()">🪄 Wygeneruj automatycznie</button>';
   h += '<button class="btn2" onclick="confirmClick(\'plan\',clearPlan)">' + (confirmKey === "plan" ? "Na pewno wyczyścić?" : "🧹 Wyczyść plan") + "</button>";
   h += '<button class="btn2" onclick="checkRules()">✅ Sprawdź zasady</button>';
