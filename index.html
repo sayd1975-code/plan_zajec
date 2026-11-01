@@ -91,6 +91,8 @@ table.unav td{padding:2px}
 table.unav td.day{font-size:12px;font-weight:600;color:#475569;padding-right:6px;white-space:nowrap}
 .uon{width:40px;height:34px;border-radius:8px;border:1px solid #6ee7b7;background:#ecfdf5;color:#059669;font-weight:700;cursor:pointer;font-size:12px}
 .uoff{width:40px;height:34px;border-radius:8px;border:1px solid #fca5a5;background:#fee2e2;color:#b91c1c;font-weight:700;cursor:pointer;font-size:12px}
+.tripcell{margin:2px 0;padding:3px 7px;border-radius:6px;font-size:11px;color:#94a3b8;background:rgba(148,163,184,.14);font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+html.dark .tripcell{color:#cbd5e1;background:rgba(148,163,184,.18)}
 .prevtbl{max-height:230px;overflow:auto;border:1px solid #e2e8f0;border-radius:10px;margin-top:8px}
 .prevtbl table{width:100%;border-collapse:collapse;font-size:12px}
 .prevtbl th{position:sticky;top:0;background:#f1f5f9;text-align:left;padding:5px 8px;font-size:11px}
@@ -170,13 +172,23 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.41.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.42.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
 var DAYS = ["Poniedziałek", "Wtorek", "Środa", "Czwartek", "Piątek"];
 var NH = 8; // slotów dziennie
 function slotBlocked(settings, s){ return ((settings && settings.blockedSlots) || []).indexOf(s) >= 0; }
+function tripBlock(){ /* v6.42: mapa slotow wyjazdow — nauczyciel (t) i oddzialy (c); czyta globalne S jak roomCap */
+  var out = { t: {}, c: {} };
+  var trs = (typeof S !== "undefined" && S && Array.isArray(S.trips)) ? S.trips : [];
+  trs.forEach(function(tr){
+    var lbl = String(tr.label || "Wyjazd");
+    (tr.teacherIds || []).forEach(function(tid){ var m = out.t[tid] = out.t[tid] || {}; (tr.slots || []).forEach(function(s){ m[s] = lbl; }); });
+    (tr.classIds || []).forEach(function(cid){ var m = out.c[cid] = out.c[cid] || {}; (tr.slots || []).forEach(function(s){ m[s] = lbl; }); });
+  });
+  return out;
+}
 var LS = "plan-zajec-vibe-v1";
 var S = null;
 var eksDocxInits = false; /* v6.28: opcjonalne inicjały nauczycieli w plikach Word */
@@ -234,6 +246,9 @@ function normalize(p){
   if (!p.dutyPlacement) p.dutyPlacement = {}; /* v6.34: dutyId -> [slot,...] */
   Object.keys(p.dutyPlacement).forEach(function(k){ var arr = p.dutyPlacement[k]; if (typeof arr === "number") arr = [arr]; /* v6.36: migracja pojedynczego slotu z 1. iteracji v6.34 */ if (!Array.isArray(arr)) delete p.dutyPlacement[k]; else p.dutyPlacement[k] = arr.filter(function(sv){ return typeof sv === "number" && isFinite(sv) && sv >= 0 && sv < 5 * NH && Math.floor(sv) === sv; }); });
   if (p.settings.weekAB == null) p.settings.weekAB = false; /* v6.35: rotacja tygodni A/B */
+  if (!Array.isArray(p.trips)) p.trips = []; /* v6.42: wyjazdy/wycieczki — { id, label, teacherIds, classIds, slots } */
+  p.trips.forEach(function(tr){ if (tr.id == null) tr.id = ""; if (tr.label == null) tr.label = ""; if (!Array.isArray(tr.teacherIds)) tr.teacherIds = []; if (!Array.isArray(tr.classIds)) tr.classIds = []; if (!Array.isArray(tr.slots)) tr.slots = []; tr.slots = tr.slots.filter(function(sv){ return typeof sv === "number" && isFinite(sv) && sv >= 0 && sv < 5 * NH && Math.floor(sv) === sv; }); });
+  p.teachers.forEach(function(t){ if (!Array.isArray(t.unavail)) t.unavail = []; if (!t.unavailWhy || typeof t.unavailWhy !== "object" || Array.isArray(t.unavailWhy)) t.unavailWhy = {}; var keepWhy = {}; t.unavail.forEach(function(sv){ if (t.unavailWhy[sv] != null) keepWhy[sv] = String(t.unavailWhy[sv]); }); t.unavailWhy = keepWhy; }); /* v6.42: powody blokad nauczyciela — czystka wpisow bez aktywnego slotu */
   if (!p.placement) p.placement = {};
   /* v6.31: sanacja placement — slot spoza zakresu 0..5*NH-1 (np. z ręcznie edytowanej kopii .json) rozbijał findViolations/renderPlan/softPenalty */
   Object.keys(p.placement).forEach(function(k){ var sv = p.placement[k]; if (typeof sv !== "number" || !isFinite(sv) || sv < 0 || sv >= 5 * NH || Math.floor(sv) !== sv) delete p.placement[k]; });
@@ -653,6 +668,9 @@ function repairSoft(ls, teachers, classes, settings, placement){
   var tracksM = {}; classes.forEach(function(c){ tracksM[c.id] = rewTracksOf(c); });
   var clsBlock = {}; classes.forEach(function(c){ clsBlock[c.id] = {}; (c.blocked || []).forEach(function(sb){ clsBlock[c.id][sb] = true; }); });
   var unavail = {}; teachers.forEach(function(t){ unavail[t.id] = {}; t.unavail.forEach(function(s){ unavail[t.id][s] = true; }); });
+  var trp = tripBlock(); /* v6.42: wyjazdy blokuja nauczyciela i klasy */
+  for (var tk in trp.t){ if (!unavail[tk]) unavail[tk] = {}; for (var sk in trp.t[tk]) unavail[tk][sk] = true; }
+  for (var ck in trp.c){ if (!clsBlock[ck]) clsBlock[ck] = {}; for (var sk2 in trp.c[ck]) clsBlock[ck][sk2] = true; }
   var hardR = rulesOn(settings).filter(function(r){ return r.hard; });
   var cntSD = {}, slotSD = {};
   var busyT = {}, busyC = {}, loadT = {}, loadC = {};
@@ -859,6 +877,9 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
   var hardR = rulesOn(settings).filter(function(r){ return r.hard; });
   var tracksM = {}; classes.forEach(function(c){ tracksM[c.id] = rewTracksOf(c); });
   var clsBlock = {}; classes.forEach(function(c){ clsBlock[c.id] = {}; (c.blocked || []).forEach(function(sb){ clsBlock[c.id][sb] = true; }); });
+  var trp = tripBlock(); /* v6.42: wyjazdy blokuja nauczyciela i klasy */
+  for (var tk in trp.t){ if (!unavail[tk]) unavail[tk] = {}; for (var sk in trp.t[tk]) unavail[tk][sk] = true; }
+  for (var ck in trp.c){ if (!clsBlock[ck]) clsBlock[ck] = {}; for (var sk2 in trp.c[ck]) clsBlock[ck][sk2] = true; }
   function dayOf(s){ return Math.floor(s / NH); }
   function arr(m, k){ if (!m[k]) m[k] = [0,0,0,0,0]; return m[k]; }
   function daySlots(tid){ if (!tDay[tid]) tDay[tid] = [[],[],[],[],[]]; return tDay[tid]; }
@@ -1115,6 +1136,7 @@ function findViolations(ls, teachers, classes, placement, settings){
   var tM = {}, cM = {};
   teachers.forEach(function(t){ tM[t.id] = t; }); classes.forEach(function(c){ cM[c.id] = c; });
   var cbM = {}; classes.forEach(function(c){ cbM[c.id] = c.blocked || []; });
+  var trM = tripBlock(); /* v6.42 */
   function tNm(id){ return tM[id] ? tM[id].name : id; }
   function cNm(id){ return cM[id] ? cM[id].name : id; }
   var slotT = {}, byClsSlot = {}, loadT = {}, loadC = {};
@@ -1123,6 +1145,8 @@ function findViolations(ls, teachers, classes, placement, settings){
     var L = ls[i], s = placement[L.id]; if (s == null || typeof s !== "number" || s < 0 || s >= 5 * NH) continue;
     var d = Math.floor(s / NH), h = s % NH;
     if (tM[L.teacherId] && tM[L.teacherId].unavail.indexOf(s) >= 0) errs.push(tNm(L.teacherId) + " nie jest dostępny/na: " + DAYS[d] + ", lekcja " + (h + 1));
+    if (trM.t[L.teacherId] && trM.t[L.teacherId][s]) errs.push(tNm(L.teacherId) + " jest wtedy na wyjeździe (🚌 " + trM.t[L.teacherId][s] + "): " + DAYS[d] + ", lekcja " + (h + 1)); /* v6.42 */
+    for (var tri2 = 0; tri2 < L.classIds.length; tri2++) if (trM.c[L.classIds[tri2]] && trM.c[L.classIds[tri2]][s]) errs.push("Klasa " + cNm(L.classIds[tri2]) + " jest wtedy na wyjeździe (🚌 " + trM.c[L.classIds[tri2]][s] + "): " + DAYS[d] + ", lekcja " + (h + 1));
     for (var cbi2 = 0; cbi2 < L.classIds.length; cbi2++) if (cbM[L.classIds[cbi2]] && cbM[L.classIds[cbi2]].indexOf(s) >= 0) errs.push("Klasa " + cNm(L.classIds[cbi2]) + " nie może mieć wtedy lekcji (blokada oddziału, np. przewozy): " + DAYS[d] + ", lekcja " + (h + 1));
     if (slotBlocked(settings, s)) errs.push("Zablokowana godzina: " + tNm(L.teacherId) + " (" + cNm(L.classIds[0]) + ") — " + DAYS[d] + ", lekcja " + (h + 1) + " jest wyłączona w Zasadach planu");
     if (L.teacherId){
@@ -2065,7 +2089,7 @@ function addTeacher(){
   var v = document.getElementById("newTeacherName").value.trim();
   if (!v) return;
   var sh = document.getElementById("newTeacherShort").value.trim() || v.split(/\s+/).slice(-1)[0].slice(0, 3);
-  S.teachers.push({ id: nextId(S.teachers, "t"), name: v, short: sh, unavail: [] }); save(); render();
+  S.teachers.push({ id: nextId(S.teachers, "t"), name: v, short: sh, unavail: [], unavailWhy: {} }); save(); render(); /* v6.42 */
 }
 function renTeacher(id, v){ S.teachers.forEach(function(t){ if (t.id === id) t.name = v; }); save(); render(); }
 function renShort(id, v){ S.teachers.forEach(function(t){ if (t.id === id) t.short = v; }); save(); render(); }
@@ -2368,6 +2392,79 @@ function parseCBlockSheet(tsv){ /* arkusz xlsx/docx: kolumna 0 = nazwa oddziału
   }
   return rows.filter(function(r){ return r; });
 }
+function parseSlotsText(str){ /* v6.42: same godziny bez klasy — „pn 1-3; wt 1,8; śr cały; czw od 6; pt do 3" (konwencja parseCBlockText + parseDaySpecText) */
+  var slots = [], skipped = [];
+  String(str || "").split(/[;\n]+/).forEach(function(chunk){
+    var c = chunk.trim();
+    if (!c || c.charAt(0) === "#") return;
+    var mD = c.match(/pn|pon|wt|wto|\u015br|sr|sro|cz|czw|czwt|pt|pi[\u0105a]/i);
+    if (!mD){ skipped.push(c); return; }
+    var d = -1, dl = mD[0].toLowerCase();
+    if (dl === "pn" || dl === "pon") d = 0;
+    else if (dl === "wt" || dl === "wto") d = 1;
+    else if (dl === "\u015br" || dl === "sr" || dl === "sro") d = 2;
+    else if (dl === "cz" || dl === "czw" || dl === "czwt") d = 3;
+    else if (dl === "pt" || dl.indexOf("pi") === 0) d = 4;
+    if (d < 0){ skipped.push(c); return; }
+    var hrs = parseDaySpecText(c.replace(mD[0], " ").trim());
+    if (!hrs || !hrs.length){ skipped.push(c); return; }
+    hrs.forEach(function(n){ var s2 = d * NH + (n - 1); if (s2 >= 0 && s2 < 5 * NH && slots.indexOf(s2) < 0) slots.push(s2); });
+  });
+  return { slots: slots, skipped: skipped };
+}
+function slotsToStr(slots){ /* v6.42: sloty -> czytelne „pn 1,2,3; wt 5" */
+  var byDay = [[],[],[],[],[]];
+  (slots || []).forEach(function(s){ var d = Math.floor(s / NH); var n = (s % NH) + 1; if (d >= 0 && d < 5 && byDay[d].indexOf(n) < 0) byDay[d].push(n); });
+  var parts = [];
+  for (var d = 0; d < 5; d++) if (byDay[d].length){ byDay[d].sort(function(a, b){ return a - b; }); parts.push(DAYS[d].slice(0, 2).toLowerCase() + " " + byDay[d].join(",")); }
+  return parts.join("; ") || "—";
+}
+function addNamedBlock(){ /* v6.42: nazwana blokada nauczyciela — unavail + powod (unavailWhy) */
+  var t = null; S.teachers.forEach(function(x){ if (x.id === ogrT) t = x; });
+  if (!t) return;
+  var lbl = String(((document.getElementById("nbWhy") || {}).value) || "").trim();
+  var r = parseSlotsText(((document.getElementById("nbSlots") || {}).value) || "");
+  if (!lbl){ flash("⚠️ Podaj powód (np. Wycieczka, Awizacja).", "warn"); return; }
+  if (!r.slots.length){ flash("⚠️ Nie zrozumiałem godzin — przykład: „wt 1-3; śr od 6”.", "warn"); return; }
+  if (!t.unavailWhy) t.unavailWhy = {}; /* v6.42: safety dla starszych zapisow */
+  r.slots.forEach(function(s){ if (t.unavail.indexOf(s) < 0) t.unavail.push(s); t.unavailWhy[s] = lbl; });
+  var cleared = 0;
+  lessons().forEach(function(L){ if (S.placement[L.id] != null && r.slots.indexOf(S.placement[L.id]) >= 0 && L.teacherId === t.id){ delete S.placement[L.id]; cleared++; } });
+  save(); render();
+  flash("✅ Blokada „" + lbl + "” ustawiona: " + slotsToStr(r.slots) + (cleared ? " — " + cleared + " lekcja(e) wróciły do nieprzypisanych." : "."), "ok");
+}
+function delNamedBlock(i){ /* v6.42: usuwa cala nazwana blokade (tylko sloty z tym powodem) */
+  var t = null; S.teachers.forEach(function(x){ if (x.id === ogrT) t = x; });
+  if (!t) return;
+  var seen = {}, order = [];
+  (t.unavail || []).forEach(function(sv){ var w = t.unavailWhy && t.unavailWhy[sv]; if (w != null){ if (!seen[w]){ seen[w] = 1; order.push(w); } } });
+  var w = order[i]; if (!w) return;
+  var kill = Object.keys(t.unavailWhy).filter(function(sv){ return t.unavailWhy[sv] === w; }).map(Number);
+  t.unavail = t.unavail.filter(function(sv){ return kill.indexOf(sv) < 0; });
+  kill.forEach(function(sv){ delete t.unavailWhy[sv]; });
+  save(); render();
+  flash("🗑️ Blokada „" + w + "” usunięta — godziny znów dostępne.");
+}
+function addTrip(){ /* v6.42: wyjazd — blokuje nauczyciela i oddział; zdejmuje kolidujace lekcje z planu */
+  var lbl = String(((document.getElementById("tripLabel") || {}).value) || "").trim() || "Wycieczka";
+  var r = parseSlotsText(((document.getElementById("tripSlots") || {}).value) || "");
+  var tids = [], cids = [];
+  S.teachers.forEach(function(t){ var elx = document.getElementById("tript-" + t.id); if (elx && elx.checked) tids.push(t.id); });
+  S.classes.forEach(function(c){ var elx = document.getElementById("tripc-" + c.id); if (elx && elx.checked) cids.push(c.id); });
+  if (!r.slots.length){ flash("⚠️ Nie zrozumiałem godzin — przykład: „wt 1-7”" + (r.skipped.length ? "; pominięto: " + r.skipped.slice(0, 3).join("; ") : ""), "warn"); return; }
+  if (!tids.length && !cids.length){ flash("⚠️ Zaznacz nauczyciela i/lub oddział.", "warn"); return; }
+  S.trips.push({ id: nextId(S.trips, "e"), label: lbl, teacherIds: tids, classIds: cids, slots: r.slots });
+  var cleared = 0;
+  lessons().forEach(function(L){ if (S.placement[L.id] != null && r.slots.indexOf(S.placement[L.id]) >= 0 && (tids.indexOf(L.teacherId) >= 0 || L.classIds.some(function(cid){ return cids.indexOf(cid) >= 0; }))){ delete S.placement[L.id]; cleared++; } });
+  save(); render();
+  flash("✅ Wyjazd „" + lbl + "” dodany (" + slotsToStr(r.slots) + ")" + (cleared ? " — " + cleared + " lekcja(e) wróciły do nieprzypisanych." : "."), "ok");
+}
+function delTrip(i){ /* v6.42 */
+  var tr = (S.trips || [])[i]; if (!tr) return;
+  S.trips.splice(i, 1);
+  save(); render();
+  flash("🗑️ Wyjazd „" + tr.label + "” usunięty — godziny znów dostępne.");
+}
 function parseCBlockText(str){ /* format tekstowy: "5a M; pn 1; wt 7,8; pt od 6" — średniki/nowe linie; klasa = pierwszy token przed pierwszym średnikiem lub w cudzysłowie/nawiasie */
   var out = [], skipped = [];
   String(str || "").split(/\r?\n/).forEach(function(line){
@@ -2538,7 +2635,7 @@ function doImport(){
     var t = null;
     if (r.teacher){
       S.teachers.forEach(function(x){ if (!t && samePerson(x.name, r.teacher)) t = x; });
-      if (!t){ t = { id: nextId(S.teachers, "t"), name: r.teacher, short: r.short || r.teacher.split(/\s+/).slice(-1)[0].slice(0, 3), unavail: [] }; S.teachers.push(t); addedT++; }
+      if (!t){ t = { id: nextId(S.teachers, "t"), name: r.teacher, short: r.short || r.teacher.split(/\s+/).slice(-1)[0].slice(0, 3), unavail: [], unavailWhy: {} }; S.teachers.push(t); addedT++; } /* v6.42 */
     }
     var names = (r.classNames && r.classNames.length ? r.classNames : [r.className]);
     var clsIds = [];
@@ -2679,7 +2776,7 @@ function toggU(s){
   var t = null; S.teachers.forEach(function(x){ if (x.id === ogrT) t = x; });
   if (!t) return;
   var has = t.unavail.indexOf(s) >= 0;
-  if (has) t.unavail = t.unavail.filter(function(x){ return x !== s; });
+  if (has){ t.unavail = t.unavail.filter(function(x){ return x !== s; }); if (t.unavailWhy) delete t.unavailWhy[s]; } /* v6.42: odblokowanie usuwa powod */
   else {
     t.unavail.push(s);
     var cleared = 0;
@@ -2748,7 +2845,16 @@ function renderOgr(){
       h += "</tr>";
     }
     h += "</table></div>";
-    h += '<div class="row" style="flex-wrap:wrap;margin-top:10px"><span class="lbl" style="min-width:100%">⌨️ Szybkie wpisywanie blokad (jedna linijka zamiast klikania):</span><input class="inp" id="availTxt" style="flex:1;min-width:220px" placeholder="np. pn 7,8; wt 6-8; śr cały; czw od 6; pt do 3"><button class="btn" style="margin-left:8px" onclick="applyAvailText()">Zastosuj</button></div>';
+    h += '<div class="row" style="flex-wrap:wrap;margin-top:10px"><span class="lbl" style="min-width:100%">🏷️ Nazwane blokady — powód + godziny; widoczne potem w planie nauczyciela (✕ z podpisem)</span></div>';
+    h += '<div class="row" style="flex-wrap:wrap;margin-top:6px">';
+    h += '<input class="inp" id="nbWhy" placeholder="powód, np. Wycieczka / Awizacja / Szkolenie" style="max-width:240px">';
+    h += '<input class="inp" id="nbSlots" placeholder="godziny, np. wt 1-3; śr od 6" style="max-width:240px">';
+    h += '<button class="btn2" onclick="addNamedBlock()">➕ Nazwij</button></div>';
+    var nbList = {}; (t.unavail || []).forEach(function(sv){ if (t.unavailWhy && t.unavailWhy[sv] != null){ var w = t.unavailWhy[sv]; (nbList[w] = nbList[w] || []).push(sv); } });
+    Object.keys(nbList).forEach(function(w, wi){
+      h += '<div class="row" style="margin-top:4px;flex-wrap:wrap"><span class="lbl">✕ <b>' + esc(w) + '</b> — ' + esc(slotsToStr(nbList[w])) + '</span> <button class="btn2" onclick="delNamedBlock(' + wi + ')">🗑️</button></div>';
+    });
+    h += '<div class="row" style="flex-wrap:wrap;margin-top:10px"><span class="lbl" style="min-width:100%">⌨️ Szybkie wpisywanie blokad (jedna linijka zamiast klikania):</span><input class="inp" id="availTxt style="flex:1;min-width:220px" placeholder="np. pn 7,8; wt 6-8; śr cały; czw od 6; pt do 3"><button class="btn" style="margin-left:8px" onclick="applyAvailText()">Zastosuj</button></div>';
     h += '<p class="hint">Liczby = niedostępne lekcje („7,8”). „cały” albo „-” = cały dzień. „od 6” = wolny od 6. lekcji do końca. „do 3” = wolny lekcje 1-3. Zapis zastępuje całą siatkę tego nauczyciela; zajęte wtedy godziny wrócą do nieprzypisanych.</p>';
   }
   h += "</div></div>";
@@ -2811,6 +2917,22 @@ function renderOgr(){
       h += '<div class="row" style="margin-top:8px"><button class="btn" onclick="applyCBlockImport()">✅ Zastosuj zaznaczone</button><span class="hint" style="margin:0">Zastępuje siatki blokad wybranych oddziałów; lekcje na blokowanych godzinach wracają do nieprzypisanych.</span></div>';
     }
   }
+  h += "</div></div>";
+  h += '<div class="card"><div class="hd">🚌 Wyjazdy i wycieczki (blokują nauczyciela i oddział naraz)</div><div class="bd">';
+  h += '<p class="hint">Wyjazd = nazwa + godziny + nauczyciel(e) + oddział(y). W tych godzinach silnik nie ułoży żadnej lekcji ani dla nauczyciela, ani dla klasy; w planie widać 🚌 z nazwą. Przykład: wychowawca z 1a na wycieczce we wtorek 1-7.</p>';
+  h += '<div class="row" style="flex-wrap:wrap"><input class="inp" id="tripLabel" placeholder="nazwa, np. Wycieczka do muzeum" style="max-width:260px">';
+  h += '<input class="inp" id="tripSlots" placeholder="godziny, np. wt 1-7" style="max-width:260px"></div>';
+  h += '<div class="row" style="flex-wrap:wrap;margin-top:6px"><span class="lbl" style="min-width:100%">Nauczyciel(e):</span>';
+  sortedTeachers().forEach(function(tt){ h += '<label style="margin-right:10px;white-space:nowrap"><input type="checkbox" id="tript-' + tt.id + '"> ' + esc(tt.short || tt.name) + "</label>"; });
+  h += "</div>";
+  h += '<div class="row" style="flex-wrap:wrap;margin-top:6px"><span class="lbl" style="min-width:100%">Oddział(y):</span>';
+  sortedClasses().forEach(function(cc){ h += '<label style="margin-right:10px;white-space:nowrap"><input type="checkbox" id="tripc-' + cc.id + '"> ' + esc(cc.name) + "</label>"; });
+  h += "</div>";
+  h += '<div class="row" style="margin-top:8px"><button class="btn" onclick="addTrip()">➕ Dodaj wyjazd</button></div>';
+  (S.trips || []).forEach(function(tr, ti){
+    var who = (tr.teacherIds || []).map(tShort).concat((tr.classIds || []).map(cName)).join(", ");
+    h += '<div class="row" style="margin-top:6px;flex-wrap:wrap"><span class="lbl">🚌 <b>' + esc(tr.label) + '</b> — ' + esc(slotsToStr(tr.slots)) + " — " + esc(who) + '</span> <button class="btn2" onclick="delTrip(' + ti + ')">🗑️</button></div>';
+  });
   h += "</div></div>";
   h += '<div class="card"><div class="hd"><span>🤖 Asystent AI (czat)</span></div><div class="bd">';
   h += '<p class="hint">Przycisk 💬 w prawym dolnym rogu otwiera czat z asystentem — dopyta o apkę i podpowie co kliknąć. Asystent działa przez <b>Twój własny backend</b> (instrukcja: „Backend asystenta AI” na Dysku Google w folderze Plan zajęć) i zewnętrzny serwis AI (Mistral). ⚠️ Nie wpisuj w czacie nazwisk ani danych wrażliwych.</p>';
@@ -3055,6 +3177,7 @@ function renderPlan(){
   var bySlot = lessonsBySlot(ls, placement);
   var lt = lessonTimes();
   var dayLoads = [0, 0, 0, 0, 0];
+  var trv = tripBlock(); var tEffV = null, cEffV = null; S.teachers.forEach(function(x){ if (x.id === eff) tEffV = x; }); S.classes.forEach(function(x){ if (x.id === eff) cEffV = x; }); /* v6.42: widoczne busy w planie */
   for (var s in bySlot){
     var rel = bySlot[s].filter(function(x){ return viewMode === "class" ? x.classIds.indexOf(eff) >= 0 : viewMode === "teacher" ? x.teacherId === eff : x.studentId === eff; });
     if (rel.length) dayLoads[Math.floor(s / NH)] += (viewMode === "class" || viewMode === "student" ? 1 : rel.length);
@@ -3076,12 +3199,23 @@ function renderPlan(){
            + '<span class="sub">' + esc(viewMode === "class" ? (stName ? stName + " • " + tShort(L.teacherId) : tShort(L.teacherId)) : viewMode === "teacher" ? L.classIds.map(cName).join("+") : cName(L.classIds[0])) + "</span>"
            + (function(){ var r = effRoomId(L); var home = cRoomOf({ classId: L.classIds[0] }); if (r && r !== home) return ' <span class="sub" title="Sala">📍' + esc(roomName(r)) + "</span>"; return ""; })() + "</div>";
       });
+      if (!relC.length){ /* v6.42: puste pole pokazuje busy — wyjazd albo blokada z powodem */
+        var cellNote = "";
+        if (viewMode === "teacher"){
+          if (trv.t[eff] && trv.t[eff][s2]) cellNote = "🚌 " + esc(trv.t[eff][s2]);
+          else if (tEffV && (tEffV.unavail || []).indexOf(s2) >= 0) cellNote = "✕" + (tEffV.unavailWhy && tEffV.unavailWhy[s2] ? " " + esc(tEffV.unavailWhy[s2]) : "");
+        } else if (viewMode === "class"){
+          if (trv.c[eff] && trv.c[eff][s2]) cellNote = "🚌 " + esc(trv.c[eff][s2]);
+          else if (cEffV && (cEffV.blocked || []).indexOf(s2) >= 0) cellNote = "⛔";
+        }
+        if (cellNote) h += '<div class="tripcell"' + (cellNote === "⛔" ? ' title="Godzina zablokowana dla oddziału (⛔ Ograniczenia)"' : "") + ">" + cellNote + "</div>";
+      }
       h += "</td>";
     }
     h += "</tr>";
   }
   h += "</table></div>";
-  h += '<p class="hint">📍 przy zajęciach = sala inna niż macierzysta klasy (uczniowie idą do gabinetu, nauczyciel przychodzi do klasy). Sala mieści tyle różnych klas naraz, ile wynosi jej pojemność w Dane → Sale (domyślnie 1). 👤 przy zajęciach w widoku oddziału = uczeń jest wtedy na zajęciach indywidualnych 1:1 (rewalidacja) poza klasą.</p>';
+  h += '<p class="hint">📍 przy zajęciach = sala inna niż macierzysta klasy (uczniowie idą do gabinetu, nauczyciel przychodzi do klasy). Sala mieści tyle różnych klas naraz, ile wynosi jej pojemność w Dane → Sale (domyślnie 1). 👤 przy zajęciach w widoku oddziału = uczeń jest wtedy na zajęciach indywidualnych 1:1 (rewalidacja) poza klasą. 🚌 na wolnym polu = wyjazd/wycieczka (nauczyciel albo oddział poza szkołą); ✕ z podpisem = nazwana blokada nauczyciela.</p>';
   h += '<p class="hint">Klik lekcja → wolne pole = przeniesienie • lekcja → lekcja = zamiana • prawy klik = usuń z planu. Program pilnuje dostępności nauczycieli, podwójnych lekcji i limitów dziennych, a także zasad z wytycznych: zablokowane godziny (siatka w Zasadach planu), okienka, bloki AUT, powiązania tej samej godziny i pary przedmiotów.</p>';
   return h;
 }
@@ -3102,7 +3236,16 @@ function planText(kind, id, bySlot){
       var s = d * NH + h2;
       var rel = (bySlot[s] || []).filter(function(x){ return kind === "class" ? x.classIds.indexOf(id) >= 0 : x.teacherId === id; });
       var cell = rel.map(function(L){ return abbr(L.subject) + " " + (kind === "class" ? tShort(L.teacherId) : L.classIds.map(function(x){ return abbr(cName(x)); }).join("+")); }).join(" / ");
-      row += pad(rel.length ? cell : "—", 16);
+      var cellTxt = rel.length ? cell : "—";
+      if (!rel.length){ /* v6.42: wydruk pokazuje busy — wyjazd albo nazwana blokada */
+        var trpT = tripBlock(); var lbl2 = "";
+        if (kind === "teacher"){
+          if (trpT.t[id] && trpT.t[id][s]) lbl2 = "🚌 " + trpT.t[id][s];
+          else { var tx2 = null; S.teachers.forEach(function(x){ if (x.id === id) tx2 = x; }); if (tx2 && (tx2.unavail || []).indexOf(s) >= 0 && tx2.unavailWhy && tx2.unavailWhy[s]) lbl2 = "✕ " + tx2.unavailWhy[s]; }
+        } else if (kind === "class" && trpT.c[id] && trpT.c[id][s]) lbl2 = "🚌 " + trpT.c[id][s];
+        if (lbl2) cellTxt = lbl2;
+      }
+      row += pad(cellTxt, 16);
     }
     rows.push(row);
   }
@@ -3176,7 +3319,11 @@ function planszeHtml(){
       for (var di2 = 0; di2 < 5; di2++){
         var sl = di2 * NH + h2, cell = [];
         (bySlot[sl] || []).forEach(function(L){ if (L.classIds.indexOf(c.id) >= 0) cell.push(L); });
-        if (!cell.length) body += '<td class="empty">·</td>';
+        if (!cell.length){ /* v6.42: wycieczka widoczna na planszy */
+          var trP = tripBlock();
+          var trL = (trP.c[c.id] && trP.c[c.id][sl]) ? "🚌 " + esc(trP.c[c.id][sl]) : "·";
+          body += '<td class="empty">' + trL + "</td>";
+        }
         else {
           body += "<td>";
           cell.forEach(function(L, ix){
@@ -3709,6 +3856,7 @@ function zastData(){ /* v6.27: analiza zastępstw dla dnia — wypadające lekcj
     inDay.push(L);
   });
   var un = {}; S.teachers.forEach(function(t){ var m = {}; (t.unavail || []).forEach(function(s){ m[s] = true; }); un[t.id] = m; });
+  var trU = tripBlock(); for (var tuk in trU.t){ if (!un[tuk]) un[tuk] = {}; for (var suk in trU.t[tuk]) un[tuk][suk] = true; } /* v6.42: kandydat zastepstwa nie moze byc na wyjeździe */
   var absent = {}; S.teachers.forEach(function(t){ if (zastAbsent[t.id] && dayLen[t.id]) absent[t.id] = true; });
   var fall = [];
   inDay.forEach(function(L){
