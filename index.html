@@ -2260,6 +2260,103 @@ function parseAvailText(str){
   });
   return { slots: slots, skipped: skipped };
 }
+/* v6.37: import blokad oddziałów (np. przewozy) */
+var cblockRows = null;
+function parseCBlockSheet(tsv){ /* arkusz xlsx/docx: kolumna 0 = nazwa oddziału, dalej 5 kolumn dni (ta sama konwencja co Dyspozycyjność) */
+  var lines = String(tsv || "").split(/\r?\n/);
+  var i0 = -1;
+  for (var i = 0; i < lines.length; i++) if (/#sheet:.*(blokady|przewozy|dyspozycyjno.*oddzia|oddzia)/i.test(lines[i])){ i0 = i; break; }
+  if (i0 < 0){ /* fallback: pierwszy arkusz, gdzie wiersze wyglądają jak klasy + 5 kolumn dni */
+    for (var j = 0; j < lines.length; j++){ if (/#sheet:/.test(lines[j])){ i0 = j; break; } }
+  }
+  if (i0 < 0) return null;
+  var rows = [], seen = {};
+  for (var k = i0 + 1; k < lines.length; k++){
+    if (/#sheet:/.test(lines[k])) break;
+    var c = lines[k].split("\t");
+    if (c.length < 2) continue;
+    var nm = c[0].trim();
+    if (!nm || /^(klasa|oddzia|nazwa)$/i.test(nm)) continue;
+    var days = [], any = false;
+    for (var d = 0; d < 5; d++){
+      var sp = parseDaySpecText(c[d + 1] || ""); /* konwencja tekstowa: liczby/od-do = ZABLOKOWANE */
+      if (sp && sp.length){ any = true; days.push(sp); } else days.push([]);
+    }
+    if (!any) continue;
+    var key = normName(nm);
+    var row = { name: nm, days: days, cid: "", on: true, note: (c[6] || "").trim() };
+    if (seen[key]) rows[rows.indexOf(seen[key])] = null;
+    seen[key] = row; rows.push(row);
+  }
+  return rows.filter(function(r){ return r; });
+}
+function parseCBlockText(str){ /* format tekstowy: "5a M; pn 1; wt 7,8; pt od 6" — średniki/nowe linie; klasa = pierwszy token przed pierwszym średnikiem lub w cudzysłowie/nawiasie */
+  var out = [], skipped = [];
+  String(str || "").split(/\r?\n/).forEach(function(line){
+    var t = line.trim();
+    if (!t || t.charAt(0) === "#") return;
+    var m = t.match(/^([^;]+);?\s*(.*)$/);
+    if (!m){ skipped.push(t); return; }
+    var clsName = m[1].trim().replace(/^["']|["']$/g, "");
+    var rest = m[2] || "";
+    var days = [[],[],[],[],[]], any = false;
+    rest.split(/;/).forEach(function(chunk){
+      var c = chunk.trim();
+      if (!c) return;
+      var mD = c.match(/pn|pon|wt|wto|\u015br|sr|sro|cz|czw|czwt|pt|pi[\u0105a]/i);
+      if (!mD){ skipped.push(clsName + ": " + c); return; }
+      var d = -1, dl = mD[0].toLowerCase();
+      if (dl === "pn" || dl === "pon") d = 0;
+      else if (dl === "wt" || dl === "wto") d = 1;
+      else if (dl === "\u015br" || dl === "sr" || dl === "sro") d = 2;
+      else if (dl === "cz" || dl === "czw" || dl === "czwt") d = 3;
+      else if (dl === "pt" || dl.indexOf("pi") === 0) d = 4;
+      var hrs = parseDaySpecText(c.replace(mD[0], " ").trim());
+      if (!hrs || d < 0){ skipped.push(clsName + ": " + c); return; }
+      hrs.forEach(function(n){ if (days[d].indexOf(n) < 0) days[d].push(n); });
+      if (hrs.length) any = true;
+    });
+    if (any) out.push({ name: clsName, days: days, cid: "", on: true, note: "" });
+    else skipped.push(t);
+  });
+  return { rows: out, skipped: skipped };
+}
+function cblockFileRead(input){
+  var f = input.files && input.files[0]; if (!f) return;
+  var name = f.name.toLowerCase();
+  f.arrayBuffer().then(function(buf){
+    try{
+      var tsv;
+      if (name.slice(-5) === ".docx") tsv = docxToTsv(zipRead(buf));
+      else if (name.slice(-5) === ".xlsx") tsv = xlsxToTsv(zipRead(buf));
+      else tsv = new TextDecoder("utf-8").decode(buf);
+      var r = parseCBlockSheet(tsv);
+      if (!r || !r.length){ cblockRows = null; flash("\u26a0\ufe0f Nie rozpoznano blokad oddziałów w tym pliku (szukam arkusza z nazwą zawierającą „blokady/przewozy” albo klasami + 5 dni).", "warn"); render(); return; }
+      cblockRows = r;
+      flash("Rozpoznano blokady oddziałów: " + r.length + " wierszy — sprawdź podgląd i kliknij „Zastosuj zaznaczone”.", "ok");
+      render();
+    }catch(e){ flash("\u26a0\ufe0f Nie udało się odczytać pliku.", "err"); }
+  });
+}
+function cblockSetC(i, v){ if (cblockRows && cblockRows[i]){ cblockRows[i].cid = v; render(); } }
+function cblockChk(i, v){ if (cblockRows && cblockRows[i]){ cblockRows[i].on = v; render(); } }
+function applyCBlockImport(){
+  if (!cblockRows) return;
+  var applied = 0, skipped = 0, cleared = 0;
+  cblockRows.forEach(function(r){
+    if (!r.on){ skipped++; return; }
+    var c = null; S.classes.forEach(function(x){ if (x.id === r.cid) c = x; });
+    if (!c){ var m2 = null; S.classes.forEach(function(x){ if (clsMatch(x.name, r.name)) m2 = x; }); if (m2) c = m2; }
+    if (!c){ skipped++; return; }
+    var slots = [];
+    r.days.forEach(function(dArr, d){ dArr.forEach(function(n){ var s2 = d * NH + (n - 1); if (slots.indexOf(s2) < 0) slots.push(s2); }); });
+    c.blocked = slots;
+    lessons().forEach(function(L){ if (S.placement[L.id] != null && slots.indexOf(S.placement[L.id]) >= 0 && L.classIds.indexOf(c.id) >= 0){ delete S.placement[L.id]; cleared++; } });
+    applied++;
+  });
+  save(); render();
+  flash("\u2705 Blokady oddziałów zastosowane dla " + applied + " klas" + (cleared ? " — " + cleared + " lekcja(e) wróciły do nieprzypisanych" : "") + (skipped ? " (pominięto: " + skipped + ")" : "") + ".", "ok");
+}
 function teacherHoursMap(){
   var h = {};
   S.activities.forEach(function(a){ if (a.teacherId) h[a.teacherId] = (h[a.teacherId] || 0) + a.hours; });
