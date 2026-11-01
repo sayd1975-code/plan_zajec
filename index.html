@@ -170,7 +170,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.40.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.41.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -3070,9 +3070,10 @@ function renderPlan(){
       var bl = S.settings.blockedSlots.indexOf(s2) >= 0;
       h += '<td onclick="cellClick(' + s2 + ')"' + (bl ? ' style="background:repeating-linear-gradient(45deg,transparent,transparent 5px,rgba(148,163,184,.18) 5px,rgba(148,163,184,.18) 10px)"' : '') + '>';
       relC.forEach(function(L){
-        h += '<div class="chip c' + colorIdx(L.subject) + (sel === L.id ? " sel" : "") + '" onclick="event.stopPropagation();chipClick(\'' + L.id + '\')" oncontextmenu="unassign(\'' + L.id + '\',event)" title="' + esc(L.subject) + (L.link ? " (↔ " + L.link + ")" : "") + " — prawy klik usuwa z planu\">"
-           + '<span class="subj">' + esc(L.subject) + "</span>"
-           + '<span class="sub">' + esc(viewMode === "class" ? tShort(L.teacherId) : viewMode === "teacher" ? L.classIds.map(cName).join("+") : cName(L.classIds[0])) + "</span>"
+        var stName = (viewMode === "class" && L.studentId) ? ((studentsOf(L.classIds[0]).filter(function(st){ return st.id === L.studentId; })[0] || {}).name || "?") : ""; /* v6.41: uczeń na terapii 1:1 */
+        h += '<div class="chip c' + colorIdx(L.subject) + (sel === L.id ? " sel" : "") + '" onclick="event.stopPropagation();chipClick(\'' + L.id + '\')" oncontextmenu="unassign(\'' + L.id + '\',event)" title="' + esc(L.subject) + (stName ? " — " + esc(stName) : "") + (L.link ? " (↔ " + L.link + ")" : "") + " — prawy klik usuwa z planu\">"
+           + '<span class="subj">' + (stName ? "👤 " : "") + esc(L.subject) + "</span>"
+           + '<span class="sub">' + esc(viewMode === "class" ? (stName ? stName + " • " + tShort(L.teacherId) : tShort(L.teacherId)) : viewMode === "teacher" ? L.classIds.map(cName).join("+") : cName(L.classIds[0])) + "</span>"
            + (function(){ var r = effRoomId(L); var home = cRoomOf({ classId: L.classIds[0] }); if (r && r !== home) return ' <span class="sub" title="Sala">📍' + esc(roomName(r)) + "</span>"; return ""; })() + "</div>";
       });
       h += "</td>";
@@ -3080,7 +3081,7 @@ function renderPlan(){
     h += "</tr>";
   }
   h += "</table></div>";
-  h += '<p class="hint">📍 przy zajęciach = sala inna niż macierzysta klasy (uczniowie idą do gabinetu, nauczyciel przychodzi do klasy). Sala mieści tyle różnych klas naraz, ile wynosi jej pojemność w Dane → Sale (domyślnie 1).</p>';
+  h += '<p class="hint">📍 przy zajęciach = sala inna niż macierzysta klasy (uczniowie idą do gabinetu, nauczyciel przychodzi do klasy). Sala mieści tyle różnych klas naraz, ile wynosi jej pojemność w Dane → Sale (domyślnie 1). 👤 przy zajęciach w widoku oddziału = uczeń jest wtedy na zajęciach indywidualnych 1:1 (rewalidacja) poza klasą.</p>';
   h += '<p class="hint">Klik lekcja → wolne pole = przeniesienie • lekcja → lekcja = zamiana • prawy klik = usuń z planu. Program pilnuje dostępności nauczycieli, podwójnych lekcji i limitów dziennych, a także zasad z wytycznych: zablokowane godziny (siatka w Zasadach planu), okienka, bloki AUT, powiązania tej samej godziny i pary przedmiotów.</p>';
   return h;
 }
