@@ -170,7 +170,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.37.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.38.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -2299,6 +2299,8 @@ function parseCBlockText(str){ /* format tekstowy: "5a M; pn 1; wt 7,8; pt od 6"
     if (!m){ skipped.push(t); return; }
     var clsName = m[1].trim().replace(/^["']|["']$/g, "");
     var rest = m[2] || "";
+    /* v6.38: linia zaczynająca się od skrótu dnia = blokady od razu, bez nazwy klasy (szybkie wpisywanie dla wybranego oddziału); poprzednio pierwszy wpis ginął jako „nazwa klasy” */
+    if (/^(pn|pon|wt|wto|śr|sr|sro|cz|czw|czwt|pt|pi[ąa])(?=[\s\d,;-]|$)/i.test(clsName)){ rest = t; clsName = ""; }
     var days = [[],[],[],[],[]], any = false;
     rest.split(/;/).forEach(function(chunk){
       var c = chunk.trim();
@@ -2331,7 +2333,14 @@ function cblockFileRead(input){
       else if (name.slice(-5) === ".xlsx") tsv = xlsxToTsv(zipRead(buf));
       else tsv = new TextDecoder("utf-8").decode(buf);
       var r = parseCBlockSheet(tsv);
-      if (!r || !r.length){ cblockRows = null; flash("\u26a0\ufe0f Nie rozpoznano blokad oddziałów w tym pliku (szukam arkusza z nazwą zawierającą „blokady/przewozy” albo klasami + 5 dni).", "warn"); render(); return; }
+      if (!r || !r.length){ /* v6.38: fallback dla plików tekstowych (.txt/.csv: wiersz na oddział, np. „5a; pn 1; wt 7,8”) — poprzednio obiecany w podglądzie, ale niepodpięty */
+        var rt = parseCBlockText(tsv);
+        r = rt.rows;
+        if (!r || !r.length){ cblockRows = null; flash("\u26a0\ufe0f Nie rozpoznano blokad oddziałów w tym pliku (szukam arkusza z nazwą zawierającą „blokady/przewozy” albo klasami + 5 dni, albo wierszy „5a; pn 1; wt 7,8”).", "warn"); render(); return; }
+        cblockRows = r;
+        flash("Rozpoznano blokady oddziałów (plik tekstowy): " + r.length + " wierszy — sprawdź podgląd i kliknij „Zastosuj zaznaczone”." + (rt.skipped.length ? " Pominięto: " + rt.skipped.slice(0, 3).join("; ") : ""), "ok");
+        render(); return;
+      }
       cblockRows = r;
       flash("Rozpoznano blokady oddziałów: " + r.length + " wierszy — sprawdź podgląd i kliknij „Zastosuj zaznaczone”.", "ok");
       render();
