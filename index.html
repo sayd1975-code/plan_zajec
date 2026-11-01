@@ -172,7 +172,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.43.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.44.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -1722,7 +1722,7 @@ function xlsxToTsv(files){
             if (vm) val = (t && t[1] === "s") ? (ss[parseInt(vm[1], 10)] || "") : vm[1];
           }
         }
-        cells[col] = val;
+        cells[col] = val.replace(/\r?\n/g, " "); /* v6.44: nowe linie w komórkach rozbijają linie TSV — zamiana na spacje (wykazy dziennikowe mają wieloliniowe nagłówki) */
         return m2;
       });
       out.push(cells.join("\t"));
@@ -1864,7 +1864,7 @@ function renderDane(){
     h += '<div class="row" style="padding-left:18px"><input id="newStudentName_' + c.id + '" class="inp" style="flex:1" placeholder="imię i nazwisko ucznia (do zajęć 1:1)"><button class="btn2" onclick="addStudent(\'' + c.id + '\')">+ uczeń</button></div>';
   });
   h += '<div class="row"><input id="newClassName" class="inp" style="flex:1" placeholder="np. 4a"><button class="btn" onclick="addClass()">+ Dodaj</button></div>';
-  h += '<div class="row" style="margin-top:10px;flex-wrap:wrap"><span class="lbl">📄 Import list uczniów z pliku (.xlsx/.docx/.csv/.txt):</span><input type="file" class="file" accept=".xlsx,.csv,.tsv,.txt,.docx" onchange="studentsFileRead(this)" title="Dwie kolumny: oddział i imię nazwisko ucznia"></div>';
+  h += '<div class="row" style="margin-top:10px;flex-wrap:wrap"><span class="lbl">📄 Import list uczniów z pliku (.xlsx/.docx/.csv/.txt):</span><input type="file" class="file" accept=".xlsx,.csv,.tsv,.txt,.docx" onchange="studentsFileRead(this)" title="Dwie kolumny (oddział | imię nazwisko) — albo wykaz dziennikowy .xlsx (arkusz = oddział)"></div>';
   h += '<div class="row" style="align-items:flex-start;margin-top:6px"><textarea id="studentsImportTxt" class="inp ta" rows="4" style="flex:1" placeholder="albo wklej listę — jedna linia = jeden uczeń (oddział | imię nazwisko):&#10;1a | Jan Kowalski&#10;6b | Anna Wiśniewska"></textarea><button class="btn2" style="align-self:flex-start" onclick="studentsApplyText()">⬇ Importuj wklejkę</button></div>';
   h += "</div></div>";
   h += '<div class="card"><div class="hd">👩‍🏫 Nauczyciele</div><div class="bd">';
@@ -2160,15 +2160,43 @@ function delStudent(cid, sid){
 function setActStudent(id, v){ var a = null; S.activities.forEach(function(x){ if (x.id === id) a = x; }); if (!a) return; a.studentId = v; prunePlacement(); save(); render(); }
 /* ==================== v6.40: import list uczniów ==================== */
 function classByNormTxt(nm){ var n = normName(nm), c = null; S.classes.forEach(function(x){ if (normName(x.name) === n) c = x; }); return c; } /* dopasowanie oddziału jak przy przydziałach: „1a” = „1a” = „1a ” */
+var SYN7 = { "2a": "2a AUT", "2b": "2b AUT (m)", "2bm": "2b AUT (m)", "3a": "3a AUT", "3b": "3b AUT", "3c": "3c AUT", "4": "4a AUT", "4aut": "4a AUT", "5": "5 ZET", "5zet": "5 ZET", "6": "6 AUT", "6aut": "6 AUT", "7": "7 AUT", "7aut": "7 AUT", "8": "8 ZET", "8zet": "8 ZET" }; /* v6.44: szkolne skróty nazw oddziałów spotykane w nazwach arkuszy wykazów dziennikowych („2A” = „2a AUT”) — same nazwy oddziałów, bez danych osobowych */
+function sheetClassGuess(name){ /* v6.44: nazwa arkusza wykazu („kl. 2A X.Y”) → oddział: utnij „kl.”, weź pierwszy token z cyfrą, dopasuj exact albo przez SYN7 */
+  var m = String(name || "").replace(/^(?:kl\.?|klasa)\s+/i, "").match(/[a-ząćęłńóśźż]*\d[a-ząćęłńóśźż]*/i);
+  if (!m) return null;
+  var n = normName(m[0]);
+  var c = classByNormTxt(n);
+  if (c) return c;
+  return SYN7[n] ? (classByNormTxt(SYN7[n]) || null) : null;
+}
+function cleanStudentName(name){ /* v6.44: ucina dopiski z wykazów dziennikowych („przyjęta od 27.10.25”, „KL.II a”, doklejone daty, drugie linie komórek) */
+  var s = String(name || "").split(/\r?\n/)[0];
+  s = s.split(/\s+(?:przyjęt|uczeń|ucznica|od\s+\d{1,2}\.|z dn|KL\.\s*\S)/i)[0];
+  s = s.replace(/\s+\d{1,2}\.\d{1,2}\.\d{2,4}\s*$/, "").replace(/\s+\d{4}-\d{2}-\d{2}.*$/, "");
+  return s.replace(/\s+/g, " ").replace(/^[\s;,.]+|[\s;,.]+$/g, "");
+}
 function parseStudentsText(str){ /* v6.40: wiersz = oddział + imię nazwisko; separator tab / | / ; (NIE przecinek — „Kowalska, Anna” ma zostać jednym nazwiskiem); wiersze-nagłówki pomijane */
   var rows = [], skipped = [];
+  var sheetCls = null, colIdx = -1; /* v6.44: kontekst arkusza wykazu dziennikowego */
   String(str || "").split(/\r?\n/).forEach(function(line){
     var t = String(line || "").replace(/^[\s\u00a0]+|[\s\u00a0]+$/g, "");
+    if (t.indexOf("#sheet:") === 0){ sheetCls = sheetClassGuess(t.slice(7).trim()); colIdx = -1; return; } /* v6.44: xlsxToTsv wypisuje nazwy arkuszy — wykaz dziennikowy ma oddział w nazwie arkusza */
     if (!t || t.charAt(0) === "#") return;
     var parts = t.indexOf("\t") >= 0 ? t.split("\t") : t.indexOf("|") >= 0 ? t.split(/\s*\|\s*/) : t.indexOf(";") >= 0 ? t.split(/\s*;\s*/) : null;
-    if (!parts){ skipped.push(t); return; }
-    var cells = parts.map(function(x){ return String(x || "").replace(/^[\s\u00a0]+|[\s\u00a0]+$/g, "").replace(/^["'„»]+/, "").replace(/["'«»]+$/, ""); }).filter(function(x){ return x !== ""; });
+    if (!parts){ if (sheetCls && (/^\d+[\s\.]*$/.test(t) || /^kl\.?\s/i.test(t) || /rok\s+szkolny/i.test(t))) return; /* v6.44: wiersz tytułowy arkusza („KL. … rok szkolny…”) i samo „l.p” — cicho */ skipped.push(t); return; }
+    var raw = parts.map(function(x){ return String(x || "").replace(/^[\s\u00a0]+|[\s\u00a0]+$/g, "").replace(/^["'„»]+/, "").replace(/["'«»]+$/, ""); }); /* v6.44: bez filtra pustych — indeksy kolumn wiarygodne w trybie wykazu */
+    var cells = raw.filter(function(x){ return x !== ""; });
     if (!cells.length) return;
+    if (sheetCls){ /* v6.44: tryb wykazu dziennikowego — kolumna ucznia z wiersza nagłówkowego, oddział z nazwy arkusza */
+      var hi = -1;
+      for (var hx = 0; hx < raw.length; hx++) if (/uczni|imi[ęe] i nazwisko|nazwisko i imi[ęe]/i.test(raw[hx])){ hi = hx; break; }
+      if (hi >= 0){ if (colIdx < 0) colIdx = hi; return; } /* wiersz nagłówków kolumn („l.p | Nazwisko i imiona ucznia | …”) — tylko raz, dalsze dopiski nie przestawią kolumny */
+      if (colIdx < 0) return; /* wiersz tytułowy klasy przed nagłówkami — pomijany cicho */
+      var nm2 = cleanStudentName(raw[colIdx] || "");
+      if (!nm2 || nm2.length < 2 || /^\d+[\s\.]*$/.test(nm2)) return; /* pusty wiersz albo samo „l.p” */
+      rows.push({ cls: sheetCls, name: nm2 });
+      return;
+    }
     if (cells.every(function(x){ return /^(klasa|klasy|oddzia[łl]|oddz|uczen|uczeń|imi[ęe]|nazwisko|nazwiska|imi[ęe] i nazwisko|lp|nr|liczba uczni[óo]w|wymiar|obsad[ay]|nauczyciel.*|ucze[ńn].*)$/i.test(x); })) return; /* wiersz nagłówka */
     if (cells.length < 2){ skipped.push(t); return; }
     var ci = -1;
