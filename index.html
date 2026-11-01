@@ -172,7 +172,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.44.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.45.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -219,6 +219,9 @@ function normalize(p){
   if (!p.settings) p.settings = { teacherMaxPerDay: 7, classMaxPerDay: 7 };
   if (!p.settings.lessonTimes || p.settings.lessonTimes.length !== NH) p.settings.lessonTimes = defaultLessonTimes();
   else if (JSON.stringify(p.settings.lessonTimes) === JSON.stringify(["8:00","8:55","9:55","10:55","11:55","12:55","13:55","14:55"])) p.settings.lessonTimes = defaultLessonTimes(); /* v6.19: migracja starego rytmu domyślnego; czasy wpisane ręcznie zostają */
+  if (p.settings.rewDur == null) p.settings.rewDur = 60; /* v6.45: godzina rewalidacyjna */
+  if (p.settings.rewLead == null) p.settings.rewLead = 15; /* v6.45: start bloku przed dzwonkiem */
+  if (p.settings.wRewMid == null) p.settings.wRewMid = 40; /* v6.45: kara za rewalidację poza lekcjami 1-2/7-8 */
   if (p.settings.friMax7 == null) p.settings.friMax7 = true;
   if (p.settings.blockedSlots == null) p.settings.blockedSlots = p.settings.friMax7 ? [4 * NH + (NH - 1)] : [];
   if (!Array.isArray(p.settings.blockedSlots)) p.settings.blockedSlots = [];
@@ -266,6 +269,9 @@ function minutesOf(t){ var m = /^(\d{1,2}):(\d{2})$/.exec((t || "").trim()); ret
 function fmtTime(min){ return Math.floor(min / 60) + ":" + String(min % 60).padStart(2, "0"); }
 function endOfLesson(t){ return fmtTime(minutesOf(t) + 45); }
 function lessonTimes(){ return S.settings.lessonTimes || defaultLessonTimes(); }
+function rewDur(){ return Math.max(30, Math.min(120, parseInt(S.settings.rewDur, 10) || 60)); } /* v6.45: godzina rewalidacyjna — 60 min wg rozporządzenia */
+function rewLead(){ return Math.max(0, Math.min(60, parseInt(S.settings.rewLead, 10) || 0)); } /* v6.45: start bloku przed dzwonkiem (domyślnie 15) */
+function rewSpan(h){ var st = minutesOf(lessonTimes()[h]) - rewLead(); return fmtTime(st) + "–" + fmtTime(st + rewDur()); } /* v6.45: czas zegarowy rewalidacji w slocie h, np. lek. 1 → 7:45–8:45 */
 function esc(s){ return String(s == null ? "" : s).replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, " ").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;"); }
 function colorIdx(s){ var h = 0; var str = String(s || ""); for (var i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) % 997; return h % 10; }
 function abbr(s){
@@ -332,7 +338,7 @@ function sps7State(){
     settings: {
       teacherMaxPerDay: 7, classMaxPerDay: 7, lessonTimes: defaultLessonTimes(),
       friMax7: true, blockedSlots: [39], maxGaps: 2, gapExceptions: "", autBlocks: true, rules: [], assistantUrl: "", chatToken: "",
-      wTeacherGap: 150, wClassGap: 150, wSwMid: 40, wAutBlock: 40, wPair: 120, classMaxGapsPerDay: 1, wClassGapDay: 150,
+      wTeacherGap: 150, wClassGap: 150, wSwMid: 40, wRewMid: 40, rewDur: 60, rewLead: 15, wAutBlock: 40, wPair: 120, classMaxGapsPerDay: 1, wClassGapDay: 150,
       pairs: [{cls:"5a M",a:"polski",b:"matematyka"},{cls:"6a M",a:"polski",b:"matematyka"},{cls:"6b",a:"polski",b:"matematyka"},{cls:"7a",a:"polski",b:"matematyka"}]
     }
   };
@@ -474,6 +480,7 @@ function softPenalty(ls, teachers, classes, settings, placement){
   var wSM = settings.wSwMid == null ? 40 : Math.max(0, +settings.wSwMid || 0);
   var wAB = settings.wAutBlock == null ? 40 : Math.max(0, +settings.wAutBlock || 0);
   var wPR = settings.wPair == null ? 120 : Math.max(0, +settings.wPair || 0);
+  var wRM = settings.wRewMid == null ? 40 : Math.max(0, +settings.wRewMid || 0); /* v6.45 */
   var mg = settings.maxGaps || 0;
   var tdays = {};
   ls.forEach(function(L){ var s = placement[L.id]; if (s == null) return;
@@ -624,6 +631,9 @@ function softPenalty(ls, teachers, classes, settings, placement){
   var swMid = 0;
   ls.forEach(function(L){ var s = placement[L.id]; if (s == null) return; if (kindL(L) !== "swietl") return; var hh = s % NH; if (wSM > 0 && hh >= 2 && hh <= 4){ pen += wSM; swMid++; } });
   if (swMid) det.push("Świetlica/ŚAW: " + swMid + " lekcji na godzinach 3-5 (wytyczne wolą 1-2 albo 6-8)");
+  var rewMid = 0; /* v6.45: rewalidacja zwyczajowo przed 1.-2. albo 7.-8. lekcją */
+  ls.forEach(function(L){ var s = placement[L.id]; if (s == null) return; if (kindL(L) !== "rew") return; var hh2 = s % NH; if (wRM > 0 && hh2 >= 2 && hh2 <= 5){ pen += wRM; rewMid++; } });
+  if (rewMid) det.push("Rewalidacja: " + rewMid + " godz. na lekcjach 3-6 (zwyczajowo przed 1.-2. albo 7.-8. lekcją)");
   if (settings.autBlocks){
     var cnt = {};
     ls.forEach(function(L){ var c0 = L.classIds[0]; if (/aut/i.test(names[c0] || "")) { cnt[c0] = cnt[c0] || {}; cnt[c0][L.teacherId] = (cnt[c0][L.teacherId] || 0) + 1; } });
@@ -2800,6 +2810,7 @@ function chatSend(){
 function setAssistantUrl(v){ S.settings.assistantUrl = String(v || "").trim(); save(); flash("Adres asystenta zapisany."); }
 function setChatToken(v){ S.settings.chatToken = String(v || "").trim(); save(); flash("Token zapisany — będzie wysyłany z każdą wiadomością."); }
 function setPenW(k, v){ S.settings[k] = Math.max(0, Math.min(2000, parseInt(v) || 0)); save(); render(); }
+function setRewNum(k, v){ var mn = k === "rewLead" ? 0 : 30; S.settings[k] = Math.max(mn, Math.min(120, parseInt(v, 10) || 0)); save(); render(); } /* v6.45: godzina rewalidacyjna / start przed dzwonkiem */
 function toggU(s){
   var t = null; S.teachers.forEach(function(x){ if (x.id === ogrT) t = x; });
   if (!t) return;
@@ -3045,7 +3056,10 @@ function renderOgr(){
   for (var j = 0; j < NH; j++){
     h += '<div class="row" style="margin:0"><span class="lbl" style="width:52px">lek. ' + (j + 1) + ':</span><input class="inp" style="width:76px;text-align:center" value="' + esc(lt2[j]) + '" onchange="setLT(' + j + ',this.value)"><span class="hint" style="margin:0">– ' + endOfLesson(lt2[j]) + "</span></div>";
   }
-  h += '</div><p class="hint">Rytm domyślny (SPS nr 7): pierwsza lekcja 8:00, każda następna o :55; lekcja trwa 45 minut.</p></div></div>';
+  h += '</div>'
+     + '<div class="row" style="margin-top:8px"><span class="lbl" style="min-width:230px">Godzina rewalidacyjna (min):</span><input class="inp" type="number" min="30" max="120" style="width:70px" value="' + rewDur() + '" onchange="setRewNum(\'rewDur\',this.value)"><span class="hint" style="margin:0">domyślnie 60 (rozporządzenie o pomocy psych.-ped.)</span></div>'
+     + '<div class="row"><span class="lbl" style="min-width:230px">Start rewalidacji przed dzwonkiem (min):</span><input class="inp" type="number" min="0" max="60" style="width:70px" value="' + rewLead() + '" onchange="setRewNum(\'rewLead\',this.value)"><span class="hint" style="margin:0">domyślnie 15 — lek. 1 (8:00) → 7:45</span></div>'
+     + '<p class="hint">Rytm domyślny (SPS nr 7): pierwsza lekcja 8:00, każda następna o :55; lekcja trwa 45 minut. Rewalidacja to godzina zegarowa — zaczyna się przed dzwonkiem lekcji, w której siedzi w planie.</p></div></div>'; /* v6.45 */
   h += '<div class="card"><div class="hd">⚙️ Limity dzienne</div><div class="bd"><div class="row">'
      + '<label class="lbl">Maks. lekcji nauczyciela dziennie:</label><input class="inp" type="number" style="width:70px" value="' + S.settings.teacherMaxPerDay + '" onchange="setLimit(\'teacherMaxPerDay\',this.value)">'
      + '<label class="lbl" style="margin-left:14px">Maks. lekcji klasy dziennie:</label><input class="inp" type="number" style="width:70px" value="' + S.settings.classMaxPerDay + '" onchange="setLimit(\'classMaxPerDay\',this.value)">'
@@ -3057,6 +3071,7 @@ function renderOgr(){
   h += '<div class="row"><span class="lbl" style="min-width:230px">Okienka klasy (za każde ponad limit):</span><input class="inp" type="number" min="0" max="2000" style="width:70px" value="' + S.settings.wClassGap + '" onchange="setPenW(\'wClassGap\',this.value)"><span class="hint" style="margin:0">domyślnie 150</span></div>';
   h += '<div class="row"><span class="lbl" style="min-width:230px">Okienka klasy w jednym dniu (za każde ponad limit):</span><input class="inp" type="number" min="0" max="2000" style="width:70px" value="' + (S.settings.wClassGapDay == null ? 150 : S.settings.wClassGapDay) + '" onchange="setPenW(\'wClassGapDay\',this.value)"><span class="hint" style="margin:0">domyślnie 150</span></div>';
   h += '<div class="row"><span class="lbl" style="min-width:230px">Świetlica/ŚAW na lekcjach 3–5 (za lekcję):</span><input class="inp" type="number" min="0" max="2000" style="width:70px" value="' + S.settings.wSwMid + '" onchange="setPenW(\'wSwMid\',this.value)"><span class="hint" style="margin:0">domyślnie 40</span></div>';
+  h += '<div class="row"><span class="lbl" style="min-width:230px">Rewalidacja poza lekcjami 1–2 i 7–8 (za godzinę):</span><input class="inp" type="number" min="0" max="2000" style="width:70px" value="' + S.settings.wRewMid + '" onchange="setPenW(\'wRewMid\',this.value)"><span class="hint" style="margin:0">domyślnie 40</span></div>'; /* v6.45 */
   h += '<div class="row"><span class="lbl" style="min-width:230px">Rozbite bloki godzin wychowawcy w AUT (za przerwę):</span><input class="inp" type="number" min="0" max="2000" style="width:70px" value="' + S.settings.wAutBlock + '" onchange="setPenW(\'wAutBlock\',this.value)"><span class="hint" style="margin:0">domyślnie 40</span></div>';
   h += '<div class="row"><span class="lbl" style="min-width:230px">Para przedmiotów nie ułożona obok siebie (za parę):</span><input class="inp" type="number" min="0" max="2000" style="width:70px" value="' + S.settings.wPair + '" onchange="setPenW(\'wPair\',this.value)"><span class="hint" style="margin:0">domyślnie 120</span></div>';
   h += '</div></div>';
@@ -3225,6 +3240,7 @@ function renderPlan(){
         h += '<div class="chip c' + colorIdx(L.subject) + (sel === L.id ? " sel" : "") + '" onclick="event.stopPropagation();chipClick(\'' + L.id + '\')" oncontextmenu="unassign(\'' + L.id + '\',event)" title="' + esc(L.subject) + (stName ? " — " + esc(stName) : "") + (L.link ? " (↔ " + L.link + ")" : "") + " — prawy klik usuwa z planu\">"
            + '<span class="subj">' + (stName ? "👤 " : "") + esc(L.subject) + "</span>"
            + '<span class="sub">' + esc(viewMode === "class" ? (stName ? stName + " • " + tShort(L.teacherId) : tShort(L.teacherId)) : viewMode === "teacher" ? L.classIds.map(cName).join("+") : cName(L.classIds[0])) + "</span>"
+           + (kindL(L) === "rew" ? ' <span class="sub" title="Godzina rewalidacyjna (60 min): zaczyna się przed dzwonkiem">⏱' + rewSpan(hh) + "</span>" : "") /* v6.45: czas zegarowy przy rewalidacji */
            + (function(){ var r = effRoomId(L); var home = cRoomOf({ classId: L.classIds[0] }); if (r && r !== home) return ' <span class="sub" title="Sala">📍' + esc(roomName(r)) + "</span>"; return ""; })() + "</div>";
       });
       if (!relC.length){ /* v6.42: puste pole pokazuje busy — wyjazd albo blokada z powodem */
@@ -3255,15 +3271,16 @@ function planText(kind, id, bySlot){
   var header = kind === "class" ? ("KLASA " + cName(id)) : ("NAUCZYCIEL: " + tName(id));
   var rows = [];
   rows.push("PLAN ZAJĘĆ — " + header);
-  rows.push("=".repeat(90));
+  rows.push("=".repeat(106)); /* v6.45 */
   rows.push("Godziny lekcyjne: " + lessonTimes().map(function(t, i){ return (i + 1) + " — " + t; }).join(", "));
-  rows.push(pad("Godz", 6) + DAYS.map(function(d){ return pad(d, 16); }).join(""));
+  rows.push("Godzina rewalidacyjna (" + rewDur() + " min): start " + rewLead() + " min przed dzwonkiem — lek. 1 → " + rewSpan(0) + ", lek. " + NH + " → " + rewSpan(NH - 1)); /* v6.45 */
+  rows.push(pad("Godz", 6) + DAYS.map(function(d){ return pad(d, 20); }).join("")); /* v6.45: kolumny 20 — mieści się czas rewalidacji */
   for (var h2 = 0; h2 < NH; h2++){
     var row = pad(String(h2 + 1), 6);
     for (var d = 0; d < 5; d++){
       var s = d * NH + h2;
       var rel = (bySlot[s] || []).filter(function(x){ return kind === "class" ? x.classIds.indexOf(id) >= 0 : x.teacherId === id; });
-      var cell = rel.map(function(L){ return abbr(L.subject) + " " + (kind === "class" ? tShort(L.teacherId) : L.classIds.map(function(x){ return abbr(cName(x)); }).join("+")); }).join(" / ");
+      var cell = rel.map(function(L){ return abbr(L.subject) + " " + (kind === "class" ? tShort(L.teacherId) : L.classIds.map(function(x){ return abbr(cName(x)); }).join("+")) + (kindL(L) === "rew" ? " [" + rewSpan(h2) + "]" : ""); }).join(" / "); /* v6.45: czas zegarowy rewalidacji w wydruku */
       var cellTxt = rel.length ? cell : "—";
       if (!rel.length){ /* v6.42: wydruk pokazuje busy — wyjazd albo nazwana blokada */
         var trpT = tripBlock(); var lbl2 = "";
@@ -3273,7 +3290,7 @@ function planText(kind, id, bySlot){
         } else if (kind === "class" && trpT.c[id] && trpT.c[id][s]) lbl2 = "🚌 " + trpT.c[id][s];
         if (lbl2) cellTxt = lbl2;
       }
-      row += pad(cellTxt, 16);
+      row += pad(cellTxt, 20); /* v6.45 */
     }
     rows.push(row);
   }
@@ -3339,6 +3356,7 @@ function planszeHtml(){
       + '<div class="cls">Oddział: ' + esc(c.name) + "</div>"
       + "<h1>PLAN LEKCJI</h1>"
       + '<div class="sub">Szkoła Podstawowa nr 7 Specjalna w Katowicach · 2026/2027 · stan na ' + stan + "</div>"
+      + '<div class="sub">Godzina rewalidacyjna: ' + rewDur() + " min, start " + rewLead() + " min przed dzwonkiem (lek. 1 → " + rewSpan(0) + ")</div>" /* v6.45 */
       + '<table><tr><th class="hr">Godzina</th>';
     for (var di = 0; di < 5; di++) body += "<th>" + days[di] + "</th>";
     body += "</tr>";
@@ -3356,7 +3374,7 @@ function planszeHtml(){
           body += "<td>";
           cell.forEach(function(L, ix){
             if (ix) body += "<hr class='sep'>";
-            body += esc(L.subject) + "<i>" + esc(tName(L.teacherId)) + "</i>";
+            body += esc(L.subject) + "<i>" + esc(tName(L.teacherId)) + (kindL(L) === "rew" ? " · ⏱" + rewSpan(h2) : "") + "</i>"; /* v6.45 */
           });
           body += "</td>";
         }
