@@ -170,7 +170,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.38.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.39.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -226,7 +226,7 @@ function normalize(p){
   if (p.settings.classMaxGapsPerDay == null) p.settings.classMaxGapsPerDay = 1;
   if (p.settings.wClassGapDay == null) p.settings.wClassGapDay = 150;
   if (!Array.isArray(p.rooms)) p.rooms = [];
-  p.rooms.forEach(function(r){ if (r.id == null) r.id = ""; if (r.name == null) r.name = ""; });
+  p.rooms.forEach(function(r){ if (r.id == null) r.id = ""; if (r.name == null) r.name = ""; if (r.cap == null) r.cap = 1; }); /* v6.39: pojemność sali = ile różnych grup klas może mieć zajęcia naraz */
   p.classes.forEach(function(c){ if (c.rew == null) c.rew = rewFromName(c.name); if (!Array.isArray(c.blocked)) c.blocked = []; if (c.roomId == null) c.roomId = ""; if (!Array.isArray(c.students)) c.students = []; }); /* v6.33: uczniowie w oddziale */
   p.activities.forEach(function(a){ if (a.group == null) a.group = ""; if (a.withClassId == null) a.withClassId = ""; if (a.link == null) a.link = ""; if (a.roomId == null) a.roomId = ""; if (a.studentId == null) a.studentId = ""; if (a.week == null) a.week = ""; }); /* v6.35: tydzień A/B (puste = oba) */ /* v6.33: zajęcia 1:1 do ucznia */
   if (!Array.isArray(p.duties)) p.duties = []; /* v6.34: dyżury — { id, name, slotsPerWeek } */
@@ -326,7 +326,7 @@ function demoState(){
   function T(id, name, short, un){ return { id: id, name: name, short: short, unavail: un || [] }; }
   function A(id, cid, subj, tid, h){ return { id: id, classId: cid, subject: subj, teacherId: tid, hours: h }; }
   return {
-    rooms: [{ id: "r1", name: "Gabinet logopedy" }, { id: "r2", name: "Gabinet psychologa" }, { id: "r3", name: "Sala gimnastyczna" }],
+    rooms: [{ id: "r1", name: "Gabinet logopedy" }, { id: "r2", name: "Gabinet psychologa" }, { id: "r3", name: "Sala gimnastyczna", cap: 2 }],
     teachers: [T("t1","Anna Kowalska","Kow"),T("t2","Maria Nowak","Now"),T("t3","Jan Wiśniewski","Wiś"),T("t4","Krystyna Zielińska","Zie"),T("t5","Barbara Lis","Lis"),T("t6","Piotr Malinowski","Mal"),T("t7","Agnieszka Kaczmarek","Kcz"),T("t8","Tomasz Bąk","Bąk",[0,1,2,3,4,5,6,7]),T("t9","ks. Tadeusz Dąbrowski","Dąb",[37,38,39]),T("t10","Iwona Lewandowska","Lew"),T("t11","Stanisław Woźniak","Woź")],
     classes: [{id:"c1",name:"1a"},{id:"c2",name:"1b"},{id:"c3",name:"2a"},{id:"c4",name:"2b"},{id:"c5",name:"3a"},{id:"c6",name:"3b"}],
     activities: [A("a1","c1","Edukacja wczesnoszkolna","t1",15),A("a2","c1","Rewalidacja","t10",2),A("a3","c1","Religia","t9",2),A("a4","c1","WF","t8",3),A("a5","c2","Edukacja wczesnoszkolna","t2",15),A("a6","c2","Rewalidacja","t10",2),A("a7","c2","Religia","t9",2),A("a8","c2","WF","t8",3),A("a9","c3","Edukacja wczesnoszkolna","t3",15),A("a10","c3","Rewalidacja","t11",2),A("a11","c3","Religia","t9",2),A("a12","c3","WF","t8",3),A("a13","c4","Edukacja wczesnoszkolna","t4",15),A("a14","c4","Rewalidacja","t11",2),A("a15","c4","Religia","t9",2),A("a16","c4","WF","t8",3),A("a17","c5","J. polski","t5",5),A("a18","c5","Matematyka","t6",5),A("a19","c5","Przyroda","t5",2),A("a20","c5","Informatyka","t11",1),A("a21","c5","Plastyka","t7",1),A("a22","c5","Technika","t7",1),A("a23","c5","Muzyka","t7",1),A("a24","c5","WF","t8",3),A("a25","c5","Religia","t9",2),A("a26","c5","Rewalidacja","t10",2),A("a27","c6","J. polski","t5",5),A("a28","c6","Matematyka","t6",5),A("a29","c6","Przyroda","t5",2),A("a30","c6","Informatyka","t11",1),A("a31","c6","Plastyka","t7",1),A("a32","c6","Technika","t7",1),A("a33","c6","Muzyka","t7",1),A("a34","c6","WF","t8",3),A("a35","c6","Religia","t9",2),A("a36","c6","Rewalidacja","t11",2)],
@@ -949,20 +949,22 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
       if (stBusy.length) return false;
     }
     /* v6.32: kolizja sal — w danej sali w danym slocie może być tylko JEDNA klasa (uczniowie siedzą w sali macierzystej; nauczyciel przychodzi) */
+    /* v6.39: pojemność sali (cap) — tyle spójnych grup klas naraz, ile cap; cap=1 = reguła v6.32 co do znaku */
     var rId = effRoomId(L);
     if (rId){
       var roomBusy = (atSlot[s] || []).filter(function(X){ return X.id !== L.id && effRoomId(X) === rId; });
-      for (var rb = 0; rb < roomBusy.length; rb++){
-        var RB = roomBusy[rb];
-        var sameCls = false;
-        for (var ri2 = 0; ri2 < L.classIds.length; ri2++) if (RB.classIds.indexOf(L.classIds[ri2]) >= 0){ sameCls = true; break; }
-        if (!sameCls) return false;
-      }
+      if (roomBusy.length && roomGroups(roomBusy.concat([L])) > roomCap(rId)) return false;
     }
     return true;
   }
   function conflictsAt(U, s2){
     var out = [], lk = kindL(U);
+    /* v6.39: czy sala U w s2 przekroczyłaby pojemność (grupy klas > cap) */
+    var rU0 = effRoomId(U), roomOver = false;
+    if (rU0){
+      var rmates0 = (atSlot[s2] || []).filter(function(y){ return y.id !== U.id && !(U.link && y.link === U.link) && effRoomId(y) === rU0; });
+      if (rmates0.length && roomGroups(rmates0.concat([U])) > roomCap(rU0)) roomOver = true;
+    }
     (atSlot[s2] || []).forEach(function(x){
       if (x.id === U.id) return;
       if (U.link && x.link === U.link) return;
@@ -972,12 +974,12 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
       }
       /* v6.33: ten sam uczeń (1:1) nie może mieć dwóch lekcji naraz */
       if (U.studentId && x.studentId === U.studentId){ out.push(x); return; }
-      /* v6.32: ta sama sala, inna klasa */
+      /* v6.32: ta sama sala, inna klasa — v6.39: konflikt tylko, gdy pojemność sali przekroczona */
       var rU = effRoomId(U), rX = effRoomId(x);
       if (rU && rX && rU === rX){
         var sh = false;
         for (var j = 0; j < U.classIds.length; j++) if (x.classIds.indexOf(U.classIds[j]) >= 0){ sh = true; break; }
-        if (!sh){ out.push(x); return; }
+        if (!sh && roomOver){ out.push(x); return; }
       }
     });
     return out;
@@ -1173,20 +1175,15 @@ function findViolations(ls, teachers, classes, placement, settings){
       errs.push("Uczeń " + studentName(sk.split("|")[0]) + " ma dwie zajęcia 1:1 naraz (" + DAYS[sd] + ", godz. " + (sh + 1) + ")");
     }
   }
-  /* v6.32: kolizja sal — jedna sala = jedna klasa w slocie */
+  /* v6.32: kolizja sal — jedna sala = jedna klasa w slocie; v6.39: limit = pojemność sali (cap) */
   var byRoomSlot = {};
   ls.forEach(function(Lr){ var sr = placement[Lr.id]; if (sr == null) return; var rr = effRoomId(Lr); if (!rr) return; var k = rr + "|" + sr; (byRoomSlot[k] = byRoomSlot[k] || []).push(Lr); });
   for (var rk in byRoomSlot){
     var rlist = byRoomSlot[rk], rslot = +rk.split("|")[1], rd = Math.floor(rslot / NH), rh = rslot % NH;
-    var bad = false;
-    for (var ri = 0; ri < rlist.length && !bad; ri++){
-      for (var rj = ri + 1; rj < rlist.length && !bad; rj++){
-        var shR = false;
-        for (var rc = 0; rc < rlist[ri].classIds.length; rc++){ if (rlist[rj].classIds.indexOf(rlist[ri].classIds[rc]) >= 0){ shR = true; break; } }
-        if (!shR) bad = true;
-      }
-    }
-    if (bad) errs.push("Sala " + roomName(rk.split("|")[0]) + " zajęta przez różne klasy naraz (" + DAYS[rd] + ", godz. " + (rh + 1) + ")");
+    var gN = roomGroups(rlist), capR = roomCap(rk.split("|")[0]);
+    if (gN > capR) errs.push(capR <= 1
+      ? "Sala " + roomName(rk.split("|")[0]) + " zajęta przez różne klasy naraz (" + DAYS[rd] + ", godz. " + (rh + 1) + ")"
+      : "Sala " + roomName(rk.split("|")[0]) + " ma " + gN + " różnych grup klas naraz — limit pojemności: " + capR + " (" + DAYS[rd] + ", godz. " + (rh + 1) + ")");
   }
   for (var tk in loadT) for (var dd = 0; dd < 5; dd++) if (loadT[tk][dd] > settings.teacherMaxPerDay) errs.push(tNm(tk) + " ma " + loadT[tk][dd] + " lekcji w " + DAYS[dd] + " (limit " + settings.teacherMaxPerDay + ")");
   for (var ck in loadC) for (var dc = 0; dc < 5; dc++) if (loadC[ck][dc] > settings.classMaxPerDay) errs.push("Klasa " + cNm(ck) + " ma " + loadC[ck][dc] + " lekcji w " + DAYS[dc] + " (limit " + settings.classMaxPerDay + ")");
@@ -1743,13 +1740,29 @@ function flash(text, kind){
 function setTab(t){ tab = t; render(); }
 function effRoomId(L){ return L.roomId || cRoomOf({ classId: L.classIds[0] }); } /* v6.32: sala zajęć, a gdy pusta — sala macierzysta klasy */
 function roomName(rid){ var r = null; (S.rooms || []).forEach(function(x){ if (x.id === rid) r = x; }); return r ? r.name : (rid || '?'); }
+function roomCap(rid){ var r = null; (S.rooms || []).forEach(function(x){ if (x.id === rid) r = x; }); var n = r ? Math.floor(r.cap) : NaN; return (n >= 1 && n <= 20) ? n : 1; } /* v6.39: pojemność sali — ile różnych grup klas może mieć w niej zajęcia naraz */
+function roomGroups(list){ /* v6.39: liczba spójnych grup klas w sali (zajęcia łączone A+B i równoległość tej samej klasy = jedna grupa) */
+  var st = list.map(function(L){ return { ids: L.classIds, hit: false }; }), n = 0;
+  for (var i = 0; i < st.length; i++){
+    if (st[i].hit) continue;
+    n++; st[i].hit = true; var stack = [i];
+    while (stack.length){
+      var cur = st[stack.pop()];
+      for (var j = 0; j < st.length; j++){
+        if (st[j].hit) continue;
+        for (var k = 0; k < cur.ids.length; k++){ if (st[j].ids.indexOf(cur.ids[k]) >= 0){ st[j].hit = true; stack.push(j); break; } }
+      }
+    }
+  }
+  return n;
+}
 function dutyById(id){ var d = null; (S.duties || []).forEach(function(x){ if (x.id === id) d = x; }); return d; } /* v6.34 */
 function weekMatch(L, wk){ return !wk || !L.week || L.week === wk; } /* v6.35: pusty tydzień = oba tygodnie */
 function dutiesBySlot(dp){ var m = {}; Object.keys(dp || {}).forEach(function(did){ (dp[did] || []).forEach(function(sl){ (m[sl] = m[sl] || []).push(did); }); }); return m; } /* v6.34 */
 function studentsOf(cid){ var c = null; S.classes.forEach(function(x){ if (x.id === cid) c = x; }); return c ? (c.students || []) : []; } /* v6.33 */
 function studentName(sid){ for (var i = 0; i < S.classes.length; i++){ var st = (S.classes[i].students || []).filter(function(x){ return x.id === sid; })[0]; if (st) return st.name + ' (' + S.classes[i].name + ')'; } return sid || '?'; }
 function cRoomOf(a){ var c = null; S.classes.forEach(function(x){ if (x.id === a.classId) c = x; }); return c ? (c.roomId || '') : ''; } /* v6.32: sala macierzysta klasy zajęć */
-function roomOpts(sel){ var o = '<option value=""' + (!sel ? ' selected' : '') + '>— bez sali —</option>'; o += (S.rooms || []).map(function(r){ return '<option value="' + r.id + '"' + (r.id === sel ? ' selected' : '') + '>' + esc(r.name) + '</option>'; }).join(''); return o; } /* v6.32 */
+function roomOpts(sel){ var o = '<option value=""' + (!sel ? ' selected' : '') + '>— bez sali —</option>'; o += (S.rooms || []).map(function(r){ return '<option value="' + r.id + '"' + (r.id === sel ? ' selected' : '') + '>' + esc(r.name) + (roomCap(r.id) > 1 ? " (do " + roomCap(r.id) + " klas)" : "") + '</option>'; }).join(''); return o; } /* v6.32; v6.39: etykieta pojemności dla sal współdzielonych */
 function opts(list, val, label){
   var has = list.some(function(x){ return x.id === val; });
   var h = "";
@@ -1839,10 +1852,12 @@ function renderDane(){
   });
   h += '<div class="row"><input id="newTeacherName" class="inp" style="flex:1" placeholder="np. Jan Kowalski"><input id="newTeacherShort" class="inp" style="width:58px;text-align:center" placeholder="skrót"><button class="btn" onclick="addTeacher()">+ Dodaj</button></div>';
   h += "</div></div>";
-  h += '<div class="card"><div class="hd">🏫 Sale / gabinety <span class="hint" style="font-weight:400">— uczniowie mają salę macierzystą (przy oddziale); nauczyciel przemieszcza się na zajęcia (sala przy zajęciach)</span></div><div class="bd">';
+  h += '<div class="card"><div class="hd">🏫 Sale / gabinety <span class="hint" style="font-weight:400">— uczniowie mają salę macierzystą (przy oddziale); nauczyciel przemieszcza się na zajęcia; liczba = pojemność: ile różnych klas może mieć w sali zajęcia naraz (domyślnie 1)</span></div><div class="bd">';
   if (!S.rooms.length) h += '<p class="hint">Brak sal — dodaj pierwszą (np. „Gabinet logopedy").</p>';
   S.rooms.forEach(function(r){
     h += '<div class="row"><input class="inp" style="flex:1" value="' + esc(r.name) + '" onchange="renRoom(\'' + r.id + '\',this.value)">'
+       + '<input class="inp" type="number" min="1" max="20" style="width:60px;text-align:center" title="Pojemność: ile różnych klas może mieć w tej sali zajęcia równocześnie (1 = gabinety i sale klasy; 2+ = np. sala gimnastyczna dla dwóch oddziałów)" value="' + roomCap(r.id) + '" onchange="setRoomCap(\'' + r.id + '\',this.value)">'
+       + (roomCap(r.id) > 1 ? '<span class="badge" title="Sala współdzielona — mogą się w niej spotykać różne klasy">🤝 do ' + roomCap(r.id) + ' klas</span>' : '')
        + '<button class="del" title="Usuń" onclick="delRoom(\'' + r.id + '\')">✕</button></div>';
   });
   h += '<div class="row"><input id="newRoomName" class="inp" style="flex:1" placeholder="np. Gabinet logopedy"><button class="btn" onclick="addRoom()">+ Dodaj</button></div>';
@@ -2120,9 +2135,10 @@ function setActStudent(id, v){ var a = null; S.activities.forEach(function(x){ i
 function addRoom(){
   var v = document.getElementById('newRoomName').value.trim();
   if (!v) return;
-  S.rooms.push({ id: nextId(S.rooms, 'r'), name: v }); save(); render();
+  S.rooms.push({ id: nextId(S.rooms, 'r'), name: v, cap: 1 }); save(); render();
 }
 function renRoom(id, v){ S.rooms.forEach(function(r){ if (r.id === id) r.name = v; }); save(); render(); }
+function setRoomCap(id, v){ var n = Math.floor(+v); if (!(n >= 1 && n <= 20)) n = 1; S.rooms.forEach(function(r){ if (r.id === id) r.cap = n; }); save(); render(); } /* v6.39: pojemność sali */
 function delRoom(id){
   if (S.activities.some(function(a){ return a.roomId === id; }) || S.classes.some(function(c){ return c.roomId === id; })){ flash('Nie można usunąć — sala jest przypisana do zajęć lub oddziału. Najpierw zmień przypisanie.', 'err'); return; }
   S.rooms = S.rooms.filter(function(r){ return r.id !== id; });
@@ -3002,7 +3018,7 @@ function renderPlan(){
     h += "</tr>";
   }
   h += "</table></div>";
-  h += '<p class="hint">📍 przy zajęciach = sala inna niż macierzysta klasy (uczniowie idą do gabinetu, nauczyciel przychodzi do klasy). Jedna sala może mieć w danej godzinie tylko jedną klasę.</p>';
+  h += '<p class="hint">📍 przy zajęciach = sala inna niż macierzysta klasy (uczniowie idą do gabinetu, nauczyciel przychodzi do klasy). Sala mieści tyle różnych klas naraz, ile wynosi jej pojemność w Dane → Sale (domyślnie 1).</p>';
   h += '<p class="hint">Klik lekcja → wolne pole = przeniesienie • lekcja → lekcja = zamiana • prawy klik = usuń z planu. Program pilnuje dostępności nauczycieli, podwójnych lekcji i limitów dziennych, a także zasad z wytycznych: zablokowane godziny (siatka w Zasadach planu), okienka, bloki AUT, powiązania tej samej godziny i pary przedmiotów.</p>';
   return h;
 }
