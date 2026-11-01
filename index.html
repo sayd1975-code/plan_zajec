@@ -170,7 +170,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.39.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.40.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -1840,6 +1840,8 @@ function renderDane(){
     h += '<div class="row" style="padding-left:18px"><input id="newStudentName_' + c.id + '" class="inp" style="flex:1" placeholder="imię i nazwisko ucznia (do zajęć 1:1)"><button class="btn2" onclick="addStudent(\'' + c.id + '\')">+ uczeń</button></div>';
   });
   h += '<div class="row"><input id="newClassName" class="inp" style="flex:1" placeholder="np. 4a"><button class="btn" onclick="addClass()">+ Dodaj</button></div>';
+  h += '<div class="row" style="margin-top:10px;flex-wrap:wrap"><span class="lbl">📄 Import list uczniów z pliku (.xlsx/.docx/.csv/.txt):</span><input type="file" class="file" accept=".xlsx,.csv,.tsv,.txt,.docx" onchange="studentsFileRead(this)" title="Dwie kolumny: oddział i imię nazwisko ucznia"></div>';
+  h += '<div class="row" style="align-items:flex-start;margin-top:6px"><textarea id="studentsImportTxt" class="inp ta" rows="4" style="flex:1" placeholder="albo wklej listę — jedna linia = jeden uczeń (oddział | imię nazwisko):&#10;1a | Jan Kowalski&#10;6b | Anna Wiśniewska"></textarea><button class="btn2" style="align-self:flex-start" onclick="studentsApplyText()">⬇ Importuj wklejkę</button></div>';
   h += "</div></div>";
   h += '<div class="card"><div class="hd">👩‍🏫 Nauczyciele</div><div class="bd">';
   if (!S.teachers.length) h += '<p class="hint">Brak nauczycieli — dodaj pierwszego albo zaimportuj przydziały (niżej).</p>';
@@ -2132,6 +2134,66 @@ function delStudent(cid, sid){
   save(); render();
 }
 function setActStudent(id, v){ var a = null; S.activities.forEach(function(x){ if (x.id === id) a = x; }); if (!a) return; a.studentId = v; prunePlacement(); save(); render(); }
+/* ==================== v6.40: import list uczniów ==================== */
+function classByNormTxt(nm){ var n = normName(nm), c = null; S.classes.forEach(function(x){ if (normName(x.name) === n) c = x; }); return c; } /* dopasowanie oddziału jak przy przydziałach: „1a” = „1a” = „1a ” */
+function parseStudentsText(str){ /* v6.40: wiersz = oddział + imię nazwisko; separator tab / | / ; (NIE przecinek — „Kowalska, Anna” ma zostać jednym nazwiskiem); wiersze-nagłówki pomijane */
+  var rows = [], skipped = [];
+  String(str || "").split(/\r?\n/).forEach(function(line){
+    var t = String(line || "").replace(/^[\s\u00a0]+|[\s\u00a0]+$/g, "");
+    if (!t || t.charAt(0) === "#") return;
+    var parts = t.indexOf("\t") >= 0 ? t.split("\t") : t.indexOf("|") >= 0 ? t.split(/\s*\|\s*/) : t.indexOf(";") >= 0 ? t.split(/\s*;\s*/) : null;
+    if (!parts){ skipped.push(t); return; }
+    var cells = parts.map(function(x){ return String(x || "").replace(/^[\s\u00a0]+|[\s\u00a0]+$/g, "").replace(/^["'„»]+/, "").replace(/["'«»]+$/, ""); }).filter(function(x){ return x !== ""; });
+    if (!cells.length) return;
+    if (cells.every(function(x){ return /^(klasa|klasy|oddzia[łl]|oddz|uczen|uczeń|imi[ęe]|nazwisko|nazwiska|imi[ęe] i nazwisko|lp|nr|liczba uczni[óo]w|wymiar|obsad[ay]|nauczyciel.*|ucze[ńn].*)$/i.test(x); })) return; /* wiersz nagłówka */
+    if (cells.length < 2){ skipped.push(t); return; }
+    var ci = -1;
+    for (var i = 0; i < cells.length; i++){ if (classByNormTxt(cells[i])){ ci = i; break; } }
+    if (ci < 0){ skipped.push(t + " — nie znam takiego oddziału"); return; }
+    var nm = "";
+    for (var j = 0; j < cells.length; j++){ if (j === ci) continue; if (/^\d+$/.test(cells[j])) continue; nm = cells[j]; break; } /* kolumna „lp” z numerami nie może zostać nazwiskiem */
+    nm = nm.replace(/\s+/g, " ").trim();
+    if (!nm || nm.length < 2){ skipped.push(t + " — brak imienia i nazwiska"); return; }
+    if (/^\d+\s*(uczni|os[óo]b)/i.test(nm) || /^(uczen|uczeń)$/i.test(nm)){ skipped.push(t + " — liczba uczniów, nie nazwisko"); return; } /* v6.40: zabezpieczenie przed importem zestawień liczności */
+    rows.push({ cls: classByNormTxt(cells[ci]), name: nm });
+  });
+  return { rows: rows, skipped: skipped };
+}
+function studentsApplyText(){ /* wklejka z pola w sekcji Dane */
+  var el = document.getElementById("studentsImportTxt");
+  applyStudentsImport(parseStudentsText(el ? el.value : ""));
+}
+function studentsFileRead(input){ /* plik .xlsx/.docx (przez TSV) lub .txt/.csv — jak import przydziałów i blokad */
+  var f = input.files && input.files[0]; if (!f) return;
+  var name = f.name.toLowerCase();
+  f.arrayBuffer().then(function(buf){
+    try{
+      var tsv;
+      if (name.slice(-5) === ".docx") tsv = docxToTsv(zipRead(buf));
+      else if (name.slice(-5) === ".xlsx") tsv = xlsxToTsv(zipRead(buf));
+      else tsv = new TextDecoder("utf-8").decode(buf).replace(/^\uFEFF/, "");
+      applyStudentsImport(parseStudentsText(tsv));
+    }catch(e){ flash("Nie udało się odczytać pliku.", "err"); }
+  });
+}
+function applyStudentsImport(r){ /* dopisuje uczniów do oddziałów (append, nic nie kasuje); duplikaty po normName pomijane */
+  if (!r || (!r.rows.length && !r.skipped.length)){ flash("Puste pole — wklej listę (oddział | imię nazwisko) albo wczytaj plik.", "warn"); return; }
+  if (!r.rows.length){ flash("⚠️ Nie rozpoznano żadnego ucznia. Przykład: „1a | Jan Kowalski”. Pominięto: " + r.skipped.slice(0, 3).join("; "), "err"); return; }
+  var added = 0, dup = 0, clsSet = {};
+  r.rows.forEach(function(row){
+    var c = row.cls;
+    clsSet[c.id] = true;
+    var exists = (c.students || []).some(function(st){ return normName(st.name) === normName(row.name); });
+    if (exists){ dup++; return; }
+    (c.students = c.students || []).push({ id: nextId(c.students, "s"), name: row.name });
+    added++;
+  });
+  save(); render();
+  var msg = "✅ Dodano " + added + " uczniów do " + Object.keys(clsSet).length + " oddziału/ów.";
+  if (dup) msg += " Duplikaty pominięte: " + dup + ".";
+  if (r.skipped.length) msg += " Pominięte wiersze: " + r.skipped.length + " (" + r.skipped.slice(0, 3).join("; ") + (r.skipped.length > 3 ? "…" : "") + ").";
+  flash(msg, (r.skipped.length || dup) ? "warn" : "ok");
+}
 function addRoom(){
   var v = document.getElementById('newRoomName').value.trim();
   if (!v) return;
