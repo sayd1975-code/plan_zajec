@@ -44,15 +44,6 @@ input,select,textarea,button{font:inherit}
 .badge.err{background:#fff1f2;border-color:#fecaca;color:#b91c1c}
 .grid2{display:grid;gap:14px;grid-template-columns:1fr}
 @media(min-width:800px){.grid2{grid-template-columns:1fr 1fr}}
-.chatfab{position:fixed;bottom:16px;right:16px;z-index:99;width:52px;height:52px;border-radius:50%;border:0;background:#2563eb;color:#fff;font-size:24px;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,.25)}
-.chatpan{position:fixed;bottom:78px;right:16px;z-index:100;width:min(380px,calc(100vw - 32px));height:min(520px,70vh);background:#fff;border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.3);display:flex;flex-direction:column;overflow:hidden}
-.chathead{background:#1f2d3d;color:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;font-weight:600}
-.chatbody{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:8px}
-.chatm{max-width:85%;padding:8px 12px;border-radius:12px;white-space:pre-wrap;word-wrap:break-word;font-size:14px}
-.chatm.u{align-self:flex-end;background:#2563eb;color:#fff}
-.chatm.a{align-self:flex-start;background:#e2e8f0;color:#1e293b}
-.chatin{display:flex;gap:8px;padding:10px;border-top:1px solid #e2e8f0}
-@media print{.chatfab,.chatpan{display:none!important}}
 .act{display:grid;grid-template-columns:1fr 1.3fr 1.7fr 64px 34px;gap:8px;align-items:center;margin-bottom:8px}
 .hint{font-size:11px;color:#94a3b8;margin:6px 0}
 .lbl{font-size:13px;color:#475569}
@@ -173,7 +164,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.47.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.48.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -233,8 +224,6 @@ function normalize(p){
   if (!p.settings.pairs) p.settings.pairs = [];
   if (p.settings.classMaxGaps == null) p.settings.classMaxGaps = 1;
   if (!Array.isArray(p.settings.rules)) p.settings.rules = [];
-  if (!p.settings.assistantUrl) p.settings.assistantUrl = "";
-  if (!p.settings.chatToken) p.settings.chatToken = "";
   if (p.settings.wTeacherGap == null) p.settings.wTeacherGap = 150;
   if (p.settings.wClassGap == null) p.settings.wClassGap = 150;
   if (p.settings.wSwMid == null) p.settings.wSwMid = 40;
@@ -339,7 +328,7 @@ function sps7State(){
     placement: {},
     settings: {
       teacherMaxPerDay: 7, classMaxPerDay: 7, lessonTimes: defaultLessonTimes(),
-      friMax7: true, blockedSlots: [39], maxGaps: 2, gapExceptions: "", autBlocks: true, rules: [], assistantUrl: "", chatToken: "",
+      friMax7: true, blockedSlots: [39], maxGaps: 2, gapExceptions: "", autBlocks: true, rules: [],
       wTeacherGap: 150, wClassGap: 150, wSwMid: 40, wRewMid: 40, rewDur: 60, rewLead: 15, wAutBlock: 40, wPair: 120, classMaxGapsPerDay: 1, wClassGapDay: 150,
       pairs: [{cls:"5a M",a:"polski",b:"matematyka"},{cls:"6a M",a:"polski",b:"matematyka"},{cls:"6b",a:"polski",b:"matematyka"},{cls:"7a",a:"polski",b:"matematyka"}]
     }
@@ -1853,11 +1842,11 @@ function render(){
   renderTabs(); renderBadge();
   var m = document.getElementById("main");
   var bnr = backupBannerHtml(); /* v6.46: pasek przypomnienia o kopii — na każdej zakładce */
-  if (tab === "dane") m.innerHTML = bnr + renderDane() + chatHtml();
-  else if (tab === "ogr") m.innerHTML = bnr + renderOgr() + chatHtml();
-  else if (tab === "plan") m.innerHTML = bnr + renderPlan() + chatHtml();
-  else if (tab === "zast") m.innerHTML = bnr + renderZast() + chatHtml(); /* v6.27 */
-  else m.innerHTML = bnr + renderEks() + chatHtml();
+  if (tab === "dane") m.innerHTML = bnr + renderDane();
+  else if (tab === "ogr") m.innerHTML = bnr + renderOgr();
+  else if (tab === "plan") m.innerHTML = bnr + renderPlan();
+  else if (tab === "zast") m.innerHTML = bnr + renderZast(); /* v6.27 */
+  else m.innerHTML = bnr + renderEks();
 }
 
 /* ---------- zakładka DANE ---------- */
@@ -2021,8 +2010,8 @@ function renderDane(){
      + '<input type="file" class="file" accept=".json,application/json" onchange="backupFileRead(this)" title="Wczytaj kopię planu z pliku"></div>';
   h += '</div></div>';
   h += '<div class="row">'
-     + '<button class="btn2" onclick="confirmClick(\'sps7\',loadSPS7)">' + (confirmKey === "sps7" ? "Na pewno? Zastąpi dane (adres asystenta zostaje)!" : "🏫 Wczytaj strukturę SPS nr 7") + "</button>"
-     + '<button class="btn2" onclick="confirmClick(\'demo\',loadDemo)">' + (confirmKey === "demo" ? "Na pewno? Zastąpi dane (adres asystenta zostaje)!" : "🧪 Wczytaj przykład") + "</button>"
+     + '<button class="btn2" onclick="confirmClick(\'sps7\',loadSPS7)">' + (confirmKey === "sps7" ? "Na pewno? Zastąpi dane!" : "🏫 Wczytaj strukturę SPS nr 7") + "</button>"
+     + '<button class="btn2" onclick="confirmClick(\'demo\',loadDemo)">' + (confirmKey === "demo" ? "Na pewno? Zastąpi dane!" : "🧪 Wczytaj przykład") + "</button>"
      + '<button class="btn2" onclick="confirmClick(\'all\',clearAll)">' + (confirmKey === "all" ? "Na pewno? Bez powrotu!" : "🗑 Wyczyść wszystko") + "</button>"
      + "</div>";
   return h;
@@ -2034,22 +2023,18 @@ function confirmClick(key, fn){
   render();
 }
 function loadSPS7(){
-  var kUrl = (S && S.settings) ? (S.settings.assistantUrl || "") : "", kTok = (S && S.settings) ? (S.settings.chatToken || "") : "";
   S = sps7State();
-  if (kUrl){ S.settings.assistantUrl = kUrl; S.settings.chatToken = kTok; }
   sel = null; importRows = null; importText = ""; draftClear(); /* v6.46 */
   save(); render();
-  flash("Wczytano strukturę SPS nr 7. Dodaj nauczycieli / wklej przydziały." + (kUrl ? " Adres asystenta zachowany." : ""), "ok");
+  flash("Wczytano strukturę SPS nr 7. Dodaj nauczycieli / wklej przydziały.", "ok");
 }
 function loadDemo(){
-  var kUrl = (S && S.settings) ? (S.settings.assistantUrl || "") : "", kTok = (S && S.settings) ? (S.settings.chatToken || "") : "";
   S = normalize(demoState());
-  if (kUrl){ S.settings.assistantUrl = kUrl; S.settings.chatToken = kTok; }
   sel = null; importRows = null; importText = ""; draftClear(); /* v6.46 */
   save(); render();
-  flash("Wczytano przykładową szkołę." + (kUrl ? " Adres asystenta zachowany." : ""), "ok");
+  flash("Wczytano przykładową szkołę.", "ok");
 }
-function clearAll(){ var kUrl = (S && S.settings) ? (S.settings.assistantUrl || "") : "", kTok = (S && S.settings) ? (S.settings.chatToken || "") : ""; S = normalize({ teachers: [], classes: [], activities: [], placement: {}, settings: { teacherMaxPerDay: 7, classMaxPerDay: 7, lessonTimes: defaultLessonTimes(), assistantUrl: kUrl, chatToken: kTok } }); sel = null; importRows = null; importText = ""; draftClear(); /* v6.46 */ save(); render(); flash("Wyczyszczono wszystko (adres asystenta zachowany).", "ok"); }
+function clearAll(){ S = normalize({ teachers: [], classes: [], activities: [], placement: {}, settings: { teacherMaxPerDay: 7, classMaxPerDay: 7, lessonTimes: defaultLessonTimes() } }); sel = null; importRows = null; importText = ""; draftClear(); /* v6.46 */ save(); render(); flash("Wyczyszczono wszystko.", "ok"); }
 /* ==================== v6.21: kopia zapasowa planu (plik .json) ==================== */
 function backupFileName(){ var d = new Date(); return "plan-zajec-kopia-" + d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0") + ".json"; }
 function backupPlan(){
@@ -2796,47 +2781,6 @@ function ruleDayTog(dd){
   } else ruleDraft.days.push(dd);
   render();
 }
-var chatOpen = false, chatBusy = false, chatMsgs = [];
-var LS_CHAT = "plan-zajec-vibe-chat-v1";
-function chatLoad(){ try{ var rawC = localStorage.getItem(LS_CHAT); chatMsgs = rawC ? (JSON.parse(rawC) || []) : []; }catch(e){ chatMsgs = []; } }
-function chatSave(){ try{ localStorage.setItem(LS_CHAT, JSON.stringify(chatMsgs.slice(-80))); }catch(e){} }
-function chatToggle(){ chatOpen = !chatOpen; render(); }
-function chatClear(){ chatMsgs = []; chatSave(); render(); }
-function chatHtml(){
-  var h = '<button class="chatfab" onclick="chatToggle()" title="Asystent AI (czat)">💬</button>';
-  if (!chatOpen) return h;
-  h += '<div class="chatpan"><div class="chathead"><span>🤖 Asystent apki</span><span>'
-    + '<button class="btn2" style="color:#fff" onclick="chatClear()" title="Wyczyść rozmowę">🗑️</button> '
-    + '<button class="btn2" style="color:#fff" onclick="chatToggle()" title="Zamknij">✕</button></span></div>'
-    + '<div class="chatbody" id="chatBody">';
-  if (!chatMsgs.length)
-    h += '<div class="chatm a">Cześć! Jestem asystentem tej apki. Pytaj o wszystko: jak wygenerować plan, co znaczą żółte pola, jak ustawić reguły albo wydrukować plansze. Odpowiadam po polsku. ⚠️ Nie wpisuj nazwisk ani danych wrażliwych.</div>';
-  chatMsgs.forEach(function(m){ h += '<div class="chatm ' + (m.role === "user" ? "u" : "a") + '">' + esc(m.text) + "</div>"; });
-  if (chatBusy) h += '<div class="chatm a">…</div>';
-  h += '</div><div class="chatin"><input id="chatIn" class="inp" style="flex:1" placeholder="Napisz pytanie… (Enter)" onkeydown="if(event.key===\'Enter\')chatSend()"><button class="btn" onclick="chatSend()"' + (chatBusy ? " disabled" : "") + '>➤</button></div>';
-  h += '<p class="hint" style="margin:0;padding:0 10px 8px">Asystent działa przez Twój backend i zewnętrzny serwis AI (Mistral) — rozmowa nie zapisuje się nigdzie poza tą przeglądarką.</p>';
-  h += "</div>";
-  return h;
-}
-function chatSend(){
-  var e2 = document.getElementById("chatIn"), t = e2 ? e2.value.trim() : "";
-  if (!t || chatBusy) return;
-  if (!S.settings.assistantUrl){ flash("Najpierw podaj adres asystenta: ⛔ Ograniczenia → 🤖 Asystent AI.", "warn"); return; }
-  chatMsgs.push({ role: "user", text: t }); chatBusy = true; chatSave(); render();
-  var msgs = chatMsgs.slice(-20).map(function(m){ return { role: m.role, text: String(m.text || "").slice(0, 4000) }; });
-  var ls = buildLessons(S.activities), placed = 0;
-  S.activities.forEach(function(a){ for (var i = 0; i < a.hours; i++) if (S.placement[a.id + "-" + i] != null) placed++; });
-  var ctx = { klasy: S.classes.length, nauczyciele: S.teachers.length, zajecia: S.activities.length, lekcje: ls.length, ulozone: placed, nieulozone: ls.length - placed };
-  fetch(S.settings.assistantUrl, { method: "POST", headers: { "Content-Type": "text/plain" }, body: JSON.stringify({ messages: msgs, context: ctx, token: (S.settings.chatToken || "") }) })
-    .then(function(r2){ return r2.json(); })
-    .then(function(d2){
-      chatMsgs.push({ role: "assistant", text: (d2 && d2.reply) ? d2.reply : "⚠️ " + ((d2 && d2.error) || "asystent nie odpowiedział — sprawdź adres backendu") });
-    })
-    .catch(function(){ chatMsgs.push({ role: "assistant", text: "⚠️ Nie mogę się połączyć z asystentem — sprawdź adres, internet albo backend." }); })
-    .then(function(){ chatBusy = false; chatSave(); render(); });
-}
-function setAssistantUrl(v){ S.settings.assistantUrl = String(v || "").trim(); save(); flash("Adres asystenta zapisany."); }
-function setChatToken(v){ S.settings.chatToken = String(v || "").trim(); save(); flash("Token zapisany — będzie wysyłany z każdą wiadomością."); }
 function setPenW(k, v){ S.settings[k] = Math.max(0, Math.min(2000, parseInt(v) || 0)); save(); render(); }
 function setRewNum(k, v){ var mn = k === "rewLead" ? 0 : 30; S.settings[k] = Math.max(mn, Math.min(120, parseInt(v, 10) || 0)); save(); render(); } /* v6.45: godzina rewalidacyjna / start przed dzwonkiem */
 function toggU(s){
@@ -3002,12 +2946,6 @@ function renderOgr(){
     var who = (tr.teacherIds || []).map(tShort).concat((tr.classIds || []).map(cName)).join(", ");
     h += '<div class="row" style="margin-top:6px;flex-wrap:wrap"><span class="lbl">🚌 <b>' + esc(tr.label) + '</b> — ' + esc(slotsToStr(tr.slots)) + " — " + esc(who) + '</span> <button class="btn2" onclick="delTrip(' + ti + ')">🗑️</button></div>';
   });
-  h += "</div></div>";
-  h += '<div class="card"><div class="hd"><span>🤖 Asystent AI (czat)</span></div><div class="bd">';
-  h += '<p class="hint">Przycisk 💬 w prawym dolnym rogu otwiera czat z asystentem — dopyta o apkę i podpowie co kliknąć. Asystent działa przez <b>Twój własny backend</b> (instrukcja: „Backend asystenta AI” na Dysku Google w folderze Plan zajęć) i zewnętrzny serwis AI (Mistral). ⚠️ Nie wpisuj w czacie nazwisk ani danych wrażliwych.</p>';
-  h += '<div class="row"><span class="lbl">Adres asystenta:</span><input class="inp" style="flex:1" value="' + esc(S.settings.assistantUrl || "") + '" placeholder="https://script.google.com/macros/s/…/exec" onchange="setAssistantUrl(this.value)"></div>';
-  h += '<div class="row"><span class="lbl">Token (opcjonalny):</span><input class="inp" style="flex:1" value="' + esc(S.settings.chatToken || "") + '" placeholder="wypełnij tylko, jeśli w backendzie ustawiłeś CHAT_TOKEN" onchange="setChatToken(this.value)"></div>';
-  h += '<p class="hint">Puste pole = czat prosi tylko o adres. Po wpisaniu adresu zapis jest automatyczny. Rozmowa zostaje tylko w tej przeglądarce.</p>';
   h += "</div></div>";
   h += '<div class="card"><div class="hd"><span>📐 Reguły własne (poziom FET)</span></div><div class="bd">';
   h += '<p class="hint">Własne zasady układania — ponad wbudowanymi. 🔒 twarda: automat nigdy jej nie złamie. 🪶 miękka: kara punktowa — automat będzie jej unikał, ale w razie konieczności dopuści (waga = „jak bardzo” unikać).</p>';
@@ -4118,7 +4056,6 @@ var themeBtnEl = document.getElementById("themeBtn");
 if (themeBtnEl) themeBtnEl.onclick = cycleTheme;
 applyTheme();
 if (window.matchMedia){ try{ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function(){ if (themeMode() === "auto") applyTheme(); }); }catch(e){} }
-chatLoad();
 try{ window.addEventListener("beforeunload", function(e){ /* v6.46: ostrzeżenie przy zamykaniu — niezatwierdzony import albo zmiany bez świeżej kopii */
   if ((importText && String(importText).trim()) || backupDueNow()){ e.preventDefault(); e.returnValue = ""; }
 }); }catch(e){}
