@@ -1,0 +1,31 @@
+name: Testy apki
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  testy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Suity testowe apki (bez zależności, Node 22)
+        env:
+          APP_SOURCE: index.html
+        run: |
+          status=0
+          for f in tests/test*.js; do
+            echo ""
+            echo "======================================  $f  ======================================"
+            node "$f" || status=1
+          done
+          echo ""
+          if [ $status -ne 0 ]; then
+            echo "❌ Przynajmniej jedna suita FAILuje — szczegóły wyżej."
+            exit 1
+          fi
+          echo "✅ Wszystkie suity przeszły."
