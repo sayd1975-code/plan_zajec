@@ -93,6 +93,9 @@ table.unav td.day{font-size:12px;font-weight:600;color:#475569;padding-right:6px
 .uoff{width:40px;height:34px;border-radius:8px;border:1px solid #fca5a5;background:#fee2e2;color:#b91c1c;font-weight:700;cursor:pointer;font-size:12px}
 .tripcell{margin:2px 0;padding:3px 7px;border-radius:6px;font-size:11px;color:#94a3b8;background:rgba(148,163,184,.14);font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 html.dark .tripcell{color:#cbd5e1;background:rgba(148,163,184,.18)}
+.bkbnr{display:flex;flex-wrap:wrap;align-items:center;gap:10px;background:#fef3c7;border:1px solid #f59e0b;border-radius:12px;padding:10px 14px;margin-bottom:12px;font-size:13.5px;font-weight:600}
+.bkbnr span{flex:1;min-width:200px}
+html.dark .bkbnr{background:#3b2f0b;border-color:#a16207;color:#fde68a}
 .prevtbl{max-height:230px;overflow:auto;border:1px solid #e2e8f0;border-radius:10px;margin-top:8px}
 .prevtbl table{width:100%;border-collapse:collapse;font-size:12px}
 .prevtbl th{position:sticky;top:0;background:#f1f5f9;text-align:left;padding:5px 8px;font-size:11px}
@@ -172,7 +175,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.45.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.46.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -214,7 +217,7 @@ function cycleTheme(){
   applyTheme();
 }
 
-function save(){ try{ localStorage.setItem(LS, JSON.stringify(S)); }catch(e){} }
+function save(){ try{ S.settings.lastSaveAt = Date.now(); localStorage.setItem(LS, JSON.stringify(S)); }catch(e){} } /* v6.46: znacznik „modyfikowano” — dla przypomnienia o kopii zapasowej */
 function normalize(p){
   if (!p.settings) p.settings = { teacherMaxPerDay: 7, classMaxPerDay: 7 };
   if (!p.settings.lessonTimes || p.settings.lessonTimes.length !== NH) p.settings.lessonTimes = defaultLessonTimes();
@@ -1750,6 +1753,7 @@ function importFileRead(input){
       else if (name.slice(-5) === ".xlsx") importText = xlsxToTsv(zipRead(buf));
       else importText = new TextDecoder("utf-8").decode(buf).replace(/^\uFEFF/, "");
       if (!importText.trim()) flash("Plik wygląda na pusty.", "warn");
+      draftSave(); /* v6.46 */
       render();
     }catch(err){
       importText = "";
@@ -1849,11 +1853,12 @@ function renderBadge(){
 function render(){
   renderTabs(); renderBadge();
   var m = document.getElementById("main");
-  if (tab === "dane") m.innerHTML = renderDane() + chatHtml();
-  else if (tab === "ogr") m.innerHTML = renderOgr() + chatHtml();
-  else if (tab === "plan") m.innerHTML = renderPlan() + chatHtml();
-  else if (tab === "zast") m.innerHTML = renderZast() + chatHtml(); /* v6.27 */
-  else m.innerHTML = renderEks() + chatHtml();
+  var bnr = backupBannerHtml(); /* v6.46: pasek przypomnienia o kopii — na każdej zakładce */
+  if (tab === "dane") m.innerHTML = bnr + renderDane() + chatHtml();
+  else if (tab === "ogr") m.innerHTML = bnr + renderOgr() + chatHtml();
+  else if (tab === "plan") m.innerHTML = bnr + renderPlan() + chatHtml();
+  else if (tab === "zast") m.innerHTML = bnr + renderZast() + chatHtml(); /* v6.27 */
+  else m.innerHTML = bnr + renderEks() + chatHtml();
 }
 
 /* ---------- zakładka DANE ---------- */
@@ -2033,7 +2038,7 @@ function loadSPS7(){
   var kUrl = (S && S.settings) ? (S.settings.assistantUrl || "") : "", kTok = (S && S.settings) ? (S.settings.chatToken || "") : "";
   S = sps7State();
   if (kUrl){ S.settings.assistantUrl = kUrl; S.settings.chatToken = kTok; }
-  sel = null; importRows = null; importText = "";
+  sel = null; importRows = null; importText = ""; draftClear(); /* v6.46 */
   save(); render();
   flash("Wczytano strukturę SPS nr 7. Dodaj nauczycieli / wklej przydziały." + (kUrl ? " Adres asystenta zachowany." : ""), "ok");
 }
@@ -2041,11 +2046,11 @@ function loadDemo(){
   var kUrl = (S && S.settings) ? (S.settings.assistantUrl || "") : "", kTok = (S && S.settings) ? (S.settings.chatToken || "") : "";
   S = normalize(demoState());
   if (kUrl){ S.settings.assistantUrl = kUrl; S.settings.chatToken = kTok; }
-  sel = null; importRows = null; importText = "";
+  sel = null; importRows = null; importText = ""; draftClear(); /* v6.46 */
   save(); render();
   flash("Wczytano przykładową szkołę." + (kUrl ? " Adres asystenta zachowany." : ""), "ok");
 }
-function clearAll(){ var kUrl = (S && S.settings) ? (S.settings.assistantUrl || "") : "", kTok = (S && S.settings) ? (S.settings.chatToken || "") : ""; S = normalize({ teachers: [], classes: [], activities: [], placement: {}, settings: { teacherMaxPerDay: 7, classMaxPerDay: 7, lessonTimes: defaultLessonTimes(), assistantUrl: kUrl, chatToken: kTok } }); sel = null; importRows = null; importText = ""; save(); render(); flash("Wyczyszczono wszystko (adres asystenta zachowany).", "ok"); }
+function clearAll(){ var kUrl = (S && S.settings) ? (S.settings.assistantUrl || "") : "", kTok = (S && S.settings) ? (S.settings.chatToken || "") : ""; S = normalize({ teachers: [], classes: [], activities: [], placement: {}, settings: { teacherMaxPerDay: 7, classMaxPerDay: 7, lessonTimes: defaultLessonTimes(), assistantUrl: kUrl, chatToken: kTok } }); sel = null; importRows = null; importText = ""; draftClear(); /* v6.46 */ save(); render(); flash("Wyczyszczono wszystko (adres asystenta zachowany).", "ok"); }
 /* ==================== v6.21: kopia zapasowa planu (plik .json) ==================== */
 function backupFileName(){ var d = new Date(); return "plan-zajec-kopia-" + d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0") + ".json"; }
 function backupPlan(){
@@ -2057,15 +2062,37 @@ function backupPlan(){
     document.body.appendChild(a);
     a.click();
     setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 3000);
+    S.settings.lastBackupAt = Date.now(); save(); /* v6.46: kopia pobrana — przypomnienie wygasa */
     flash("💾 Zapisano kopię zapasową (" + backupFileName() + ") — przechowaj plik w bezpiecznym miejscu.", "ok");
   }catch(e){ flash("Nie udało się zapisać kopii: " + (e && e.message ? e.message : e), "err"); }
+}
+/* ==================== v6.46: strażnik sesji — autosave wklejki, przypomnienie o kopii, ostrzeżenie przy zamykaniu ==================== */
+var LS_DRAFT = LS + "-draft", LS_NAG = LS + "-nag";
+function draftSave(){ try{ localStorage.setItem(LS_DRAFT, JSON.stringify({ t: importText, at: Date.now() })); }catch(e){} } /* wklejka importu przeżywa zamknięcie karty */
+function draftClear(){ try{ localStorage.removeItem(LS_DRAFT); }catch(e){} }
+function draftRestore(){ try{ var d = JSON.parse(localStorage.getItem(LS_DRAFT) || "null"); if (d && d.t && String(d.t).trim()){ importText = String(d.t); setTimeout(function(){ flash("🔁 Przywrócono wklejkę importu z poprzedniej sesji — jest w okienku w zakładce Dane; kliknij Podgląd, żeby kontynuować.", "ok"); }, 400); } }catch(e){} }
+function backupDueNow(){ /* czy pokazać przypomnienie o kopii zapasowej */
+  if (!S || !S.settings || (!S.teachers.length && !S.classes.length && !S.activities.length)) return false;
+  var lb = S.settings.lastBackupAt || 0, ls = S.settings.lastSaveAt || 0;
+  if (lb && ls <= lb) return false; /* po ostatniej kopii nic się nie zmieniło */
+  if (lb && ls - lb < 5000) return false; /* v6.46: zapisy techniczne tuż po pobraniu kopii (save w backupPlan) to nie są „zmiany” */
+  try{ var ng = parseInt(localStorage.getItem(LS_NAG) || "0", 10) || 0; if (ng && Date.now() - ng < 86400000) return false; }catch(e){} /* „Przypomnij za 24 h” */
+  return true;
+}
+function backupNagDismiss(){ try{ localStorage.setItem(LS_NAG, String(Date.now())); }catch(e){} flash("Dobrze — przypomnę o kopii za 24 godziny. Plan zapisuje się automatycznie; kopia .json to dodatkowa ochrona na wyczyszczenie danych przeglądarki.", "ok"); render(); }
+function backupAgeTxt(){ var lb = S.settings.lastBackupAt; if (!lb) return ""; var h = Math.floor((Date.now() - lb) / 3600000); return h < 1 ? "mniej niż godzina temu" : h < 48 ? h + " godz. temu" : Math.floor(h / 24) + " dni temu"; }
+function backupBannerHtml(){ /* v6.46: widoczny pasek na każdej zakładce — coś większego niż znaczek */
+  if (!backupDueNow()) return "";
+  var msg = S.settings.lastBackupAt ? "Ostatnia kopia zapasowa: " + backupAgeTxt() + " — od tego czasu były zmiany w planie." : "Nie masz jeszcze kopii zapasowej planu (plik .json) — to jedyna ochrona na wypadek wyczyszczenia danych przeglądarki.";
+  return '<div class="bkbnr"><span>💾 ' + esc(msg) + '</span><button class="btn" onclick="backupPlan()">Zapisz kopię teraz</button><button class="btn2" onclick="backupNagDismiss()">Przypomnij za 24 h</button></div>';
 }
 function applyBackupText(text){
   var p = JSON.parse(String(text || ""));
   if (!p || typeof p !== "object" || Array.isArray(p)) throw new Error("to nie jest kopia planu (oczekiwałem obiektu JSON)");
   if (!Array.isArray(p.teachers) || !Array.isArray(p.classes) || !Array.isArray(p.activities) || !p.placement || typeof p.placement !== "object") throw new Error("brak teachers/classes/activities/placement — to nie wygląda na kopię planu");
   S = normalize(p);
-  sel = null; importRows = null; importText = "";
+  S.settings.lastBackupAt = Date.now(); /* v6.46: wczytanie kopii = masz świeży plik na urządzeniu */
+  sel = null; importRows = null; importText = ""; draftClear(); /* v6.46 */
   save(); render();
   return { t: S.teachers.length, c: S.classes.length, a: S.activities.length };
 }
@@ -2295,6 +2322,7 @@ function analyze(){
   importText = ta ? ta.value : importText;
   if (!importText.trim()){ flash("Wklej dane do okienka albo wczytaj plik (.txt, .csv, .docx, .xlsx).", "warn"); return; }
   importRows = parseImportText(importText);
+  draftSave(); /* v6.46: wklejka przeżywa zamknięcie karty */
   render();
   var okN = importRows.filter(function(r){ return r.status !== "err"; }).length, erN = importRows.length - okN;
   flash(erN === 0 ? "Rozpoznano " + okN + " wierszy — sprawdź podgląd i kliknij Importuj." : "Rozpoznano " + okN + " wierszy, " + erN + " odrzucono — sprawdź podgląd.", erN === 0 ? "ok" : "warn");
@@ -2686,7 +2714,7 @@ function doImport(){
     if (clsIds.length > 1) mergedN++;
     S.activities.push({ id: nextId(S.activities, "a"), classId: clsIds[0], withClassId: clsIds[1] || "", teacherId: t ? t.id : "", subject: r.subject, hours: r.hours, kind: r.kind || guessKind(r.subject), group: r.group || "", link: "" });
   });
-  importRows = null; importText = ""; save(); render();
+  importRows = null; importText = ""; draftClear(); /* v6.46 */ save(); render();
   flash("✅ Zaimportowano " + rows.length + " przydziałów (+" + addedT + " nauczycieli, +" + addedC + " klas" + (mergedN ? ", " + mergedN + " zajęć łączonych" : "") + (wakatN ? ", " + wakatN + " bez nauczyciela (wakat)" : "") + "). Wygeneruj plan albo dokładaj ręcznie.", "ok");
 }
 
@@ -4082,12 +4110,16 @@ var firstRun = false;
 try{ if (!localStorage.getItem(LS)) firstRun = true; }catch(e){ firstRun = true; }
 S = loadState();
 loadZast(); /* v6.28: odtwórz zaznaczenia zastępstw z poprzedniej sesji */
+draftRestore(); /* v6.46: przywróć wklejkę importu z poprzedniej sesji */
 if (firstRun) save();
 var themeBtnEl = document.getElementById("themeBtn");
 if (themeBtnEl) themeBtnEl.onclick = cycleTheme;
 applyTheme();
 if (window.matchMedia){ try{ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function(){ if (themeMode() === "auto") applyTheme(); }); }catch(e){} }
 chatLoad();
+try{ window.addEventListener("beforeunload", function(e){ /* v6.46: ostrzeżenie przy zamykaniu — niezatwierdzony import albo zmiany bez świeżej kopii */
+  if ((importText && String(importText).trim()) || backupDueNow()){ e.preventDefault(); e.returnValue = ""; }
+}); }catch(e){}
 render();
 if (firstRun) flash("Witaj! 👋 Wczytano nazwy oddziałów SPS nr 7. W zakładce 📋 Dane dodaj nauczycieli i wklej przydziały — dane zostaną wyłącznie u Ciebie.", "ok");
 if ("serviceWorker" in navigator && location.protocol === "https:"){
