@@ -168,6 +168,27 @@ html.dark tr.rwr{background:#43290b}
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
+function isoDate(d){ var m = (d.getMonth() + 1), dd = d.getDate(); return d.getFullYear() + "-" + String(m).padStart(2, "0") + "-" + String(dd).padStart(2, "0"); } /* v6.52 */
+function parseIso(s2){ var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s2 || "")); if (!m) return null; var dt = new Date(+m[1], +m[2] - 1, +m[3]); return isNaN(dt) ? null : dt; }
+function mondayOf(dt){ var d2 = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()); var dow = (d2.getDay() + 6) % 7; d2.setDate(d2.getDate() - dow); return d2; } /* poniedziałek tygodnia */
+function addDays(dt, n){ var d2 = new Date(dt); d2.setDate(d2.getDate() + n); return d2; }
+function holidayName(iso){ return (S.settings.holidayNames || {})[iso] || ""; }
+function isHoliday(iso){ return (S.settings.holidays || []).indexOf(iso) >= 0; }
+function weekDates(monday){ var out = []; for (var i = 0; i < 5; i++) out.push(isoDate(addDays(monday, i))); return out; } /* v6.52: daty pn-pt danego tygodnia */
+function defaultHolidays(){ /* v6.52: święta ustawowe rok szkolny 2026/27 (wbudowane, można edytować) */
+  return [
+    ["2026-11-11", "Święto Niepodległości"],
+    ["2026-12-25", "Boże Narodzenie"],
+    ["2026-12-26", "drugi dzień Świąt"],
+    ["2027-01-01", "Nowy Rok"],
+    ["2027-01-06", "Trzech Króli"],
+    ["2027-04-05", "Poniedziałek Wielkanocny"],
+    ["2027-05-01", "Święto Pracy"],
+    ["2027-05-03", "Święto Konstytucji 3 Maja"],
+    ["2027-06-03", "Boże Ciało"],
+    ["2027-08-15", "Wniebowzięcie NMP"]
+  ];
+}
 var DAYS = ["Poniedziałek", "Wtorek", "Środa", "Czwartek", "Piątek"];
 var NH = 8; // slotów dziennie
 function slotBlocked(settings, s){ return ((settings && settings.blockedSlots) || []).indexOf(s) >= 0; }
@@ -218,6 +239,8 @@ function normalize(p){
   if (p.settings.friMax7 == null) p.settings.friMax7 = true;
   if (p.settings.blockedSlots == null) p.settings.blockedSlots = p.settings.friMax7 ? [4 * NH + (NH - 1)] : [];
   if (!Array.isArray(p.settings.blockedSlots)) p.settings.blockedSlots = [];
+  if (!Array.isArray(p.settings.holidays)) p.settings.holidays = []; /* v6.52: dni wolne ISO YYYY-MM-DD */
+  if (!p.settings.holidayNames || typeof p.settings.holidayNames !== "object") p.settings.holidayNames = {}; /* v6.52: data -> nazwa */
   if (p.settings.maxGaps == null) p.settings.maxGaps = 2;
   if (!p.settings.gapExceptions) p.settings.gapExceptions = "";
   if (p.settings.autBlocks == null) p.settings.autBlocks = true;
