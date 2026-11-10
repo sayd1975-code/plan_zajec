@@ -239,7 +239,10 @@ function normalize(p){
   if (p.settings.friMax7 == null) p.settings.friMax7 = true;
   if (p.settings.blockedSlots == null) p.settings.blockedSlots = p.settings.friMax7 ? [4 * NH + (NH - 1)] : [];
   if (!Array.isArray(p.settings.blockedSlots)) p.settings.blockedSlots = [];
-  if (!Array.isArray(p.settings.holidays)) p.settings.holidays = []; /* v6.52: dni wolne ISO YYYY-MM-DD */
+  if (!("holidays" in p.settings)){ /* v6.53: pierwszy raz — wbudowana lista 2026/27 */
+    defaultHolidays().forEach(function(h){ p.settings.holidays = p.settings.holidays || []; if (p.settings.holidays.indexOf(h[0]) < 0) p.settings.holidays.push(h[0]); p.settings.holidayNames = p.settings.holidayNames || {}; p.settings.holidayNames[h[0]] = h[1]; });
+  }
+  if (!Array.isArray(p.settings.holidays)) p.settings.holidays = []; /* v6.52 */
   if (!p.settings.holidayNames || typeof p.settings.holidayNames !== "object") p.settings.holidayNames = {}; /* v6.52: data -> nazwa */
   if (p.settings.maxGaps == null) p.settings.maxGaps = 2;
   if (!p.settings.gapExceptions) p.settings.gapExceptions = "";
