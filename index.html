@@ -164,7 +164,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.52.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.53.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -239,7 +239,10 @@ function normalize(p){
   if (p.settings.friMax7 == null) p.settings.friMax7 = true;
   if (p.settings.blockedSlots == null) p.settings.blockedSlots = p.settings.friMax7 ? [4 * NH + (NH - 1)] : [];
   if (!Array.isArray(p.settings.blockedSlots)) p.settings.blockedSlots = [];
-  if (!Array.isArray(p.settings.holidays)) p.settings.holidays = []; /* v6.52: dni wolne ISO YYYY-MM-DD */
+  if (!("holidays" in p.settings)){ /* v6.53: pierwszy raz — wbudowana lista 2026/27 */
+    defaultHolidays().forEach(function(h){ p.settings.holidays = p.settings.holidays || []; if (p.settings.holidays.indexOf(h[0]) < 0) p.settings.holidays.push(h[0]); p.settings.holidayNames = p.settings.holidayNames || {}; p.settings.holidayNames[h[0]] = h[1]; });
+  }
+  if (!Array.isArray(p.settings.holidays)) p.settings.holidays = []; /* v6.52 */
   if (!p.settings.holidayNames || typeof p.settings.holidayNames !== "object") p.settings.holidayNames = {}; /* v6.52: data -> nazwa */
   if (p.settings.maxGaps == null) p.settings.maxGaps = 2;
   if (!p.settings.gapExceptions) p.settings.gapExceptions = "";
@@ -2379,6 +2382,40 @@ function importWarnings(rows){
   return warn;
 }
 /* v6.52: dni wolne — CRUD + wbudowana lista */
+/* v6.53: kalendarz miesięczny dni wolnych */
+var calMonth = null; /* v6.53: "YYYY-MM" aktualnie pokazywanego miesiąca — null = bieżący */
+function calSet(v){ calMonth = v; render(); }
+function calNav(n){ var base = calMonth ? parseIso(calMonth + "-01") : new Date(); var d2 = new Date(base.getFullYear(), base.getMonth() + n, 1); calMonth = isoDate(d2).slice(0, 7); render(); }
+function calToday(){ calMonth = null; render(); }
+function calHtml(){
+  var base = calMonth ? parseIso(calMonth + "-01") : new Date();
+  var y = base.getFullYear(), m = base.getMonth();
+  var first = new Date(y, m, 1);
+  var startDow = (first.getDay() + 6) % 7; /* 0 = poniedziałek */
+  var daysIn = new Date(y, m + 1, 0).getDate();
+  var monthName = first.toLocaleDateString("pl-PL", { month: "long", year: "numeric" });
+  var h = '<div class="row" style="margin-top:10px"><span class="lbl">Kalendarz:</span>';
+  h += '<button class="btn2" onclick="calNav(-1)">◀</button>';
+  h += '<input type="month" class="inp" style="width:150px" value="' + y + '-' + String(m + 1).padStart(2, "0") + '" onchange="calSet(this.value)">';
+  h += '<button class="btn2" onclick="calNav(1)">▶</button>';
+  h += '<button class="btn2" onclick="calToday()">Bieżący</button>';
+  h += '<span class="lbl" style="margin-left:8px">' + esc(monthName.charAt(0).toUpperCase() + monthName.slice(1)) + '</span></div>';
+  h += '<table class="plan" style="min-width:0"><tr>';
+  ["Pn","Wt","Śr","Cz","Pt","So","Nd"].forEach(function(d2){ h += "<th>" + d2 + "</th>"; });
+  h += "</tr><tr>";
+  for (var i = 0; i < startDow; i++) h += "<td></td>";
+  var todayIso = isoDate(new Date());
+  for (var d = 1; d <= daysIn; d++){
+    var iso = isoDate(new Date(y, m, d));
+    var hol = isHoliday(iso), nm = holidayName(iso);
+    var dow = (startDow + d - 1) % 7;
+    if (dow === 0 && d > 1) h += "</tr><tr>";
+    h += '<td title="' + esc(nm || "") + '" style="min-width:0;height:auto;padding:6px;' + (hol ? "background:#fecaca;font-weight:700" : "") + (iso === todayIso ? "outline:2px solid #f59e0b" : "") + '">' + d + (hol ? " 🎌" : "") + "</td>";
+  }
+  h += "</tr></table>";
+  h += '<p class="hint">Czerwone + 🎌 = dzień wolny (najedź, żeby zobaczyć nazwę). Ramka = dziś.</p>';
+  return h;
+}
 function holidayAdd(){
   var dEl = document.getElementById("newHolidayDate"), nEl = document.getElementById("newHolidayName");
   var dt = parseIso(dEl ? dEl.value : "");
@@ -3116,6 +3153,7 @@ function renderOgr(){
   h += '<div class="row"><input type="date" id="newHolidayDate" class="inp"><input id="newHolidayName" class="inp" style="flex:1" placeholder="nazwa (np. Ferie zimowe)"><button class="btn" onclick="holidayAdd()">+ Dodaj</button>'
      + '<button class="btn2" onclick="holidayLoadDefaults()">📥 Wczytaj święta 2026/27</button></div>';
   h += '<p class="hint">Własne wpisy (np. ferie wg województwa, dni dyrektorskie) zostają — wbudowana lista tylko dopisuje brakujące.</p>';
+  h += calHtml();
   h += "</div></div>";
   h += '<div class="card"><div class="hd">🕐 Godziny lekcyjne</div><div class="bd"><div class="ltcnt">';
   var lt2 = lessonTimes();
@@ -3273,6 +3311,7 @@ function renderPlan(){
   h += '<input type="date" class="inp" style="width:150px" value="' + isoDate(planMonday || mondayOf(new Date())) + '" onchange="planWeekSet(this.value)">';
   h += '<button class="btn2" onclick="planWeekNav(7)">▶</button>';
   h += '<button class="btn2" onclick="planWeekToday()">Dziś</button>';
+  if (!(S.settings.holidays || []).length) h += '<span class="hint">Brak dni wolnych — wczytaj listę w ⛔ Ograniczenia → 📅 Dni wolne.</span>'; /* v6.53 */
   h += '<button class="btn" onclick="runAuto()">🪄 Wygeneruj automatycznie</button>';
   h += '<button class="btn2" onclick="confirmClick(\'plan\',clearPlan)">' + (confirmKey === "plan" ? "Na pewno wyczyścić?" : "🧹 Wyczyść plan") + "</button>";
   h += '<button class="btn2" onclick="checkRules()">✅ Sprawdź zasady</button>';
