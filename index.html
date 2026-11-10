@@ -3247,6 +3247,10 @@ function unassign(id, ev){
   flash(L0 && L0.link ? "Powiązane lekcje wróciły do nieprzypisanych." : "Lekcja wróciła do nieprzypisanych.", "ok");
 }
 var planWeek = "A"; /* v6.35: aktywny tydzień w widoku planu */
+var planMonday = null; /* v6.52: poniedziałek aktualnie pokazywanego tygodnia (Date) — null = bieżący tydzień */
+function planWeekSet(v){ var dt = parseIso(v); if (dt) planMonday = mondayOf(dt); render(); } /* v6.52 */
+function planWeekNav(n){ var base = planMonday || mondayOf(new Date()); planMonday = addDays(base, n); render(); }
+function planWeekToday(){ planMonday = null; render(); }
 function renderPlan(){
   var ls = lessons(planWeek), placement = S.placement;
   var unplaced = ls.filter(function(l){ return placement[l.id] == null; });
@@ -3264,6 +3268,11 @@ function renderPlan(){
   viewSel = eff;
   h += '<select class="inp" onchange="setViewSel(this.value)">' + ents.map(function(e){ return '<option value="' + e.id + '"' + (e.id === eff ? " selected" : "") + ">" + esc(e.name) + "</option>"; }).join("") + "</select>";
   if (S.settings.weekAB){ h += '<select class="inp" onchange="planWeek=this.value;render()"><option value="A"' + (planWeek === "A" ? " selected" : "") + '>Tydzień A</option><option value="B"' + (planWeek === "B" ? " selected" : "") + '>Tydzień B</option></select>'; } /* v6.35 */
+  h += '<span class="lbl" style="margin-left:8px">Tydzień:</span>';
+  h += '<button class="btn2" onclick="planWeekNav(-7)">◀</button>';
+  h += '<input type="date" class="inp" style="width:150px" value="' + isoDate(planMonday || mondayOf(new Date())) + '" onchange="planWeekSet(this.value)">';
+  h += '<button class="btn2" onclick="planWeekNav(7)">▶</button>';
+  h += '<button class="btn2" onclick="planWeekToday()">Dziś</button>';
   h += '<button class="btn" onclick="runAuto()">🪄 Wygeneruj automatycznie</button>';
   h += '<button class="btn2" onclick="confirmClick(\'plan\',clearPlan)">' + (confirmKey === "plan" ? "Na pewno wyczyścić?" : "🧹 Wyczyść plan") + "</button>";
   h += '<button class="btn2" onclick="checkRules()">✅ Sprawdź zasady</button>';
@@ -3296,7 +3305,9 @@ function renderPlan(){
   for (var i = 0; i < NH; i++) h += "<th>lek. " + (i + 1) + "<br><span class='sub'>" + esc(lt[i]) + "</span></th>";
   h += "</tr>";
   for (var d = 0; d < 5; d++){
-    h += '<tr><td class="day">' + DAYS[d] + '<br><span class="sub' + (dayLoads[d] > S.settings.classMaxPerDay ? " err" : "") + '">' + dayLoads[d] + " lek.</span></td>";
+    var wdates = weekDates(planMonday || mondayOf(new Date()));
+    var isoD = wdates[d], hol = isHoliday(isoD);
+    h += '<tr><td class="day"' + (hol ? ' style="background:#fee2e2"' : '') + '>' + DAYS[d] + '<br><span class="sub">' + isoD.slice(5) + (hol ? ' 🎌 ' + esc(holidayName(isoD)) : '') + '</span><br><span class="sub' + (dayLoads[d] > S.settings.classMaxPerDay ? " err" : "") + '">' + (hol ? "wolne" : dayLoads[d] + " lek.") + "</span></td>";
     for (var hh = 0; hh < NH; hh++){
       var s2 = d * NH + hh;
       var relC = (bySlot[s2] || []).filter(function(x){ return viewMode === "class" ? x.classIds.indexOf(eff) >= 0 : viewMode === "teacher" ? x.teacherId === eff : (x.classIds.indexOf(studentClassId(eff)) >= 0 || x.studentId === eff); });
