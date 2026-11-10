@@ -164,7 +164,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.52.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.53.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -3289,7 +3289,6 @@ var planMonday = null; /* v6.52: poniedziałek aktualnie pokazywanego tygodnia (
 function planWeekSet(v){ var dt = parseIso(v); if (dt) planMonday = mondayOf(dt); render(); } /* v6.52 */
 function planWeekNav(n){ var base = planMonday || mondayOf(new Date()); planMonday = addDays(base, n); render(); }
 function planWeekToday(){ planMonday = null; render(); }
-  if (!(S.settings.holidays || []).length) h += '<span class="hint">Brak dni wolnych — wczytaj listę w ⛔ Ograniczenia → 📅 Dni wolne.</span>';
 function renderPlan(){
   var ls = lessons(planWeek), placement = S.placement;
   var unplaced = ls.filter(function(l){ return placement[l.id] == null; });
@@ -3312,6 +3311,7 @@ function renderPlan(){
   h += '<input type="date" class="inp" style="width:150px" value="' + isoDate(planMonday || mondayOf(new Date())) + '" onchange="planWeekSet(this.value)">';
   h += '<button class="btn2" onclick="planWeekNav(7)">▶</button>';
   h += '<button class="btn2" onclick="planWeekToday()">Dziś</button>';
+  if (!(S.settings.holidays || []).length) h += '<span class="hint">Brak dni wolnych — wczytaj listę w ⛔ Ograniczenia → 📅 Dni wolne.</span>'; /* v6.53 */
   h += '<button class="btn" onclick="runAuto()">🪄 Wygeneruj automatycznie</button>';
   h += '<button class="btn2" onclick="confirmClick(\'plan\',clearPlan)">' + (confirmKey === "plan" ? "Na pewno wyczyścić?" : "🧹 Wyczyść plan") + "</button>";
   h += '<button class="btn2" onclick="checkRules()">✅ Sprawdź zasady</button>';
