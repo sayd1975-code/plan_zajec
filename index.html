@@ -164,7 +164,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.48.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.49.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -272,6 +272,15 @@ function abbr(s){
   var init = raw.filter(function(w){ return skip.indexOf(w.toLowerCase()) < 0; }).map(function(w){ return w[0].toUpperCase(); }).join("");
   return init || raw[0].slice(0,3).toUpperCase();
 }
+function downloadText(name, txt){
+  var blob = new Blob([txt], { type: 'text/plain;charset=utf-8' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 3000);
+} /* v6.39 */
 function pad(s, n){ s = String(s); return s.length >= n ? s.slice(0, n) : s + " ".repeat(n - s.length); }
 function nextId(items, prefix){
   var max = 0;
@@ -1825,7 +1834,7 @@ function sortedSubjects(){
   return arr;
 }
 function renderTabs(){
-  var tabs = [["dane","📋 Dane"],["ogr","⛔ Ograniczenia"],["plan","🗓️ Plan"],["zast","🔁 Zastępstwa"],["eks","🖨️ Eksport"]]; /* v6.27: nowa zakładka Zastępstwa */
+  var tabs = [["dane","📋 Dane"],["ogr","⛔ Ograniczenia"],["plan","🗓️ Plan"],["zast","🔁 Zastępstwa"],["eks","🖨️ Eksport"],["stat","📊 Statystyki"]]; /* v6.39 */ /* v6.27: nowa zakładka Zastępstwa */
   document.getElementById("tabs").innerHTML = tabs.map(function(t){
     return '<button class="tab' + (tab === t[0] ? " on" : "") + '" onclick="setTab(\'' + t[0] + '\')">' + t[1] + "</button>";
   }).join("");
@@ -1846,6 +1855,7 @@ function render(){
   else if (tab === "ogr") m.innerHTML = bnr + renderOgr();
   else if (tab === "plan") m.innerHTML = bnr + renderPlan();
   else if (tab === "zast") m.innerHTML = bnr + renderZast(); /* v6.27 */
+  else if (tab === "stat") m.innerHTML = bnr + renderStat(); /* v6.39 */
   else m.innerHTML = bnr + renderEks();
 }
 
@@ -3914,6 +3924,107 @@ function saldoData(){ /* v6.27: saldo godzin — przydział vs ułożony plan + 
   var sums = { prz: 0, plan: 0, swPrz: 0, swPlan: 0 };
   rows.forEach(function(r){ sums.prz += r.prz; sums.plan += r.plan; sums.swPrz += r.swPrz; sums.swPlan += r.swPlan; });
   return { rows: rows, sums: sums, day: di };
+}
+/* v6.39: zakładka STATYSTYKI — dane zagregowane */
+function statsData(){
+  var ls = lessons(), pl = S.placement, bySlot = lessonsBySlot(ls, pl);
+  var hPrzT = hoursBy("teacherId"), hPrzC = hoursBy("classId");
+  /* nauczyciele */
+  var teachers = sortedTeachers().map(function(t){
+    var placed = 0, perDay = [0,0,0,0,0], gaps = 0, sw = 0;
+    ls.forEach(function(L){
+      if (L.teacherId !== t.id) return;
+      var sl = pl[L.id]; if (sl == null) return;
+      placed++; perDay[Math.floor(sl / NH)]++;
+    });
+    for (var d = 0; d < 5; d++){
+      var hs = [];
+      for (var hh = 0; hh < NH; hh++){ var s2 = d * NH + hh; if ((bySlot[s2] || []).some(function(L){ return L.teacherId === t.id; })) hs.push(hh); }
+      gaps += dayGaps(hs);
+    }
+    ls.forEach(function(L){ if (L.teacherId === t.id && kindL(L) === "swietl" && pl[L.id] != null) sw++; });
+    return { id: t.id, name: t.name, prz: hPrzT[t.id] || 0, plan: placed, saldo: (hPrzT[t.id] || 0) - placed, perDay: perDay, maxDay: Math.max.apply(null, perDay.concat([0])), gaps: gaps, swietlica: sw, unavail: (t.unavail || []).length };
+  });
+  /* klasy */
+  var classes = sortedClasses().map(function(c){
+    var placed = 0, perDay = [0,0,0,0,0], gaps = 0, rew = 0, sw = 0, dyd = 0;
+    ls.forEach(function(L){
+      if (L.classIds.indexOf(c.id) < 0) return;
+      var sl = pl[L.id]; if (sl == null) return;
+      placed++; perDay[Math.floor(sl / NH)]++;
+      if (kindL(L) === "rew") rew++; else if (kindL(L) === "swietl") sw++; else dyd++;
+    });
+    for (var d2 = 0; d2 < 5; d2++){
+      var hs2 = [];
+      for (var hh2 = 0; hh2 < NH; hh2++){ var s3 = d2 * NH + hh2; if ((bySlot[s3] || []).some(function(L){ return L.classIds.indexOf(c.id) >= 0; })) hs2.push(hh2); }
+      gaps += dayGaps(hs2);
+    }
+    return { id: c.id, name: c.name, prz: hPrzC[c.id] || 0, plan: placed, perDay: perDay, maxDay: Math.max.apply(null, perDay.concat([0])), gaps: gaps, rew: rew, swietlica: sw, dyd: dyd, blocked: (c.blocked || []).length, room: c.roomId ? roomName(c.roomId) : "—" };
+  });
+  return { teachers: teachers, classes: classes, totalLessons: ls.length, placed: ls.filter(function(L){ return pl[L.id] != null; }).length };
+}
+function statsText(st){
+  var rows = [];
+  rows.push("STATYSTYKI PLANU — wygenerowano " + new Date().toLocaleString("pl-PL"));
+  rows.push("Lekcji wszystkich: " + st.totalLessons + ", ułożonych: " + st.placed + ", nieprzypisanych: " + (st.totalLessons - st.placed));
+  rows.push("");
+  rows.push("=== NAUCZYCIELE (przydział vs plan) ===");
+  rows.push(pad("Nauczyciel", 28) + pad("przydz.", 8) + pad("plan", 6) + pad("saldo", 7) + pad("max/dzień", 10) + pad("okienka", 8) + pad("świetlica", 9) + "niedostępne");
+  st.teachers.forEach(function(t){
+    rows.push(pad(t.name, 28) + pad(t.prz, 8) + pad(t.plan, 6) + pad(t.saldo, 7) + pad(t.maxDay, 10) + pad(t.gaps, 8) + pad(t.swietlica, 9) + t.unavail);
+  });
+  rows.push("");
+  rows.push("=== KLASY ===");
+  rows.push(pad("Klasa", 12) + pad("przydz.", 8) + pad("plan", 6) + pad("max/dzień", 10) + pad("okienka", 8) + pad("dyd.", 6) + pad("rew.", 6) + pad("świetl.", 7) + pad("blokad", 7) + "sala");
+  st.classes.forEach(function(c){
+    rows.push(pad(c.name, 12) + pad(c.prz, 8) + pad(c.plan, 6) + pad(c.maxDay, 10) + pad(c.gaps, 8) + pad(c.dyd, 6) + pad(c.rew, 6) + pad(c.swietlica, 7) + pad(c.blocked, 7) + c.room);
+  });
+  return rows.join("\n");
+}
+function statsCsv(st){
+  var rows = [];
+  rows.push("typ;nazwa;przydzial_h;plan_h;saldo;max_lekcji_dzien;okienka;swietlica;rew;dyd;blokady;sala;niedostepne");
+  st.teachers.forEach(function(t){ rows.push(["nauczyciel", t.name, t.prz, t.plan, t.saldo, t.maxDay, t.gaps, t.swietlica, "", "", "", "", t.unavail].join(";")); });
+  st.classes.forEach(function(c){ rows.push(["klasa", c.name, c.prz, c.plan, "", c.maxDay, c.gaps, c.swietlica, c.rew, c.dyd, c.blocked, c.room, ""].join(";")); });
+  return rows.join("\n");
+}
+function statsDownload(kind){
+  var st = statsData();
+  var txt = kind === "csv" ? statsCsv(st) : statsText(st);
+  var name = kind === "csv" ? "statystyki.csv" : "statystyki.txt";
+  downloadText(name, txt);
+  flash("Pobrano " + name + ".", "ok");
+}
+/* v6.39: zakładka STATYSTYKI */
+function renderStat(){
+  var st = statsData();
+  var h = '<div class="row">';
+  h += '<button class="btn2" onclick="statsDownload(' + "'txt'" + ')">⬇️ Pobierz .txt</button>';
+  h += '<button class="btn2" onclick="statsDownload(' + "'csv'" + ')">⬇️ Pobierz .csv</button>';
+  h += '<span class="badge ' + (st.placed === st.totalLessons && st.totalLessons > 0 ? "ok" : "err") + '">' + st.placed + "/" + st.totalLessons + " lekcji ułożonych</span>";
+  h += "</div>";
+  h += '<div class="card"><div class="hd">👨‍🏫 Nauczyciele — przydział vs plan</div><div class="bd">';
+  if (!st.teachers.length) h += '<p class="hint">Brak nauczycieli.</p>';
+  else {
+    h += '<div style="overflow-x:auto"><table class="imp"><tr><th>Nauczyciel</th><th>przydział</th><th>plan</th><th>saldo</th><th>max/dzień</th><th>okienka</th><th>świetlica</th><th>niedostępne</th></tr>';
+    st.teachers.forEach(function(t){
+      h += "<tr><td>" + esc(t.name) + '</td><td style="text-align:right">' + t.prz + ' h</td><td style="text-align:right">' + t.plan + '</td><td style="text-align:right" class="' + (t.saldo < 0 ? "rer" : t.saldo > 0 ? "rwr" : "") + '">' + t.saldo + '</td><td style="text-align:right">' + t.maxDay + '</td><td style="text-align:right">' + t.gaps + '</td><td style="text-align:right">' + t.swietlica + '</td><td style="text-align:right">' + t.unavail + "</td></tr>";
+    });
+    h += "</table></div>";
+  }
+  h += "</div></div>";
+  h += '<div class="card"><div class="hd">🏫 Klasy — obciążenie tygodniowe</div><div class="bd">';
+  if (!st.classes.length) h += '<p class="hint">Brak oddziałów.</p>';
+  else {
+    h += '<div style="overflow-x:auto"><table class="imp"><tr><th>Klasa</th><th>sala</th><th>przydział</th><th>plan</th><th>max/dzień</th><th>okienka</th><th>dyd.</th><th>rew.</th><th>świetl.</th><th>blokady</th></tr>';
+    st.classes.forEach(function(c){
+      h += "<tr><td>" + esc(c.name) + '</td><td>' + esc(c.room) + '</td><td style="text-align:right">' + c.prz + ' h</td><td style="text-align:right">' + c.plan + '</td><td style="text-align:right" class="' + (c.maxDay > S.settings.classMaxPerDay ? "rer" : "") + '">' + c.maxDay + '</td><td style="text-align:right" class="' + (c.gaps > 0 ? "rwr" : "") + '">' + c.gaps + '</td><td style="text-align:right">' + c.dyd + '</td><td style="text-align:right">' + c.rew + '</td><td style="text-align:right">' + c.swietlica + '</td><td style="text-align:right">' + c.blocked + "</td></tr>";
+    });
+    h += "</table></div>";
+    h += '<p class="hint">okienka = liczba przerw między lekcjami w dniach (klasy bez okienek to reguła twarda). max/dzień porównane z limitem w Ograniczeniach. saldo = przydział − ułożone (żółte = coś nieułożone, czerwone = nadmiar).</p>';
+  }
+  h += "</div></div>";
+  return h;
 }
 function renderZast(){ /* v6.27: zakładka Zastępstwa — nieobecni, wypadające lekcje z kandydatami, saldo godzin */
   var di = zastDayIdx();
