@@ -164,7 +164,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.49.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.50.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -3032,7 +3032,6 @@ function renderOgr(){
   h += '<div class="row"><select id="r_hard" class="inp" onchange="ruleDS(\'hard\')"><option value="hard"' + (ruleDraft.hard !== "soft" ? " selected" : "") + '>🔒 Twarda — zawsze</option><option value="soft"' + (ruleDraft.hard === "soft" ? " selected" : "") + '>🪶 Miękka — kara</option></select>'
     + '<span class="lbl">waga:</span><input id="r_w" class="inp" style="width:64px" type="number" min="10" value="' + esc(ruleDraft.w) + '"' + (ruleDraft.hard === "soft" ? "" : " disabled") + "></div>";
   h += '<div class="row"><button class="btn" onclick="ruleSave()">' + (ruleEditId ? "💾 Zapisz zmiany" : "➕ Dodaj regułę") + "</button>" + (ruleEditId ? '<button class="btn2" onclick="ruleCancel()">Anuluj</button>' : "") + "</div>";
-  if (viewMode === "student") h += '<button class="btn2" onclick="openStudentPrint()">🖨️ Wydrukuj plan ucznia</button>'; /* v6.50 */
   h += '<p class="hint">Przykłady: „Matematyka” tylko lekcje 1–4 · „Wych. fizyczne” nigdy ostatnie · „Rewalidacja” maks. 2 dziennie · „W-F” nie obok „Świetlicy” · „Język polski” min. 2 dni odstępu · „Plastyka” tylko Pn i Śr · „Muzyka” maks. 2 tygodniowo · „W-F” w blokach po 2 (2× obok siebie) · nauczyciel pracuje tylko Pn–Śr · nauczyciel ma „W-F” w maks. 2 dniach tygodnia · rewalidacje nauczyciela w blokach po 2 pod rząd. Reguły działają przy „🪄 Wygeneruj automatycznie” i w „✅ Sprawdź zasady”.</p>';
   h += "</div></div>";
   h += '<div class="card"><div class="hd">🕐 Godziny lekcyjne</div><div class="bd"><div class="ltcnt">';
@@ -3185,6 +3184,7 @@ function renderPlan(){
   h += '<button class="btn" onclick="runAuto()">🪄 Wygeneruj automatycznie</button>';
   h += '<button class="btn2" onclick="confirmClick(\'plan\',clearPlan)">' + (confirmKey === "plan" ? "Na pewno wyczyścić?" : "🧹 Wyczyść plan") + "</button>";
   h += '<button class="btn2" onclick="checkRules()">✅ Sprawdź zasady</button>';
+  if (viewMode === "student") h += '<button class="btn2" onclick="openStudentPrint()">🖨️ Wydrukuj plan ucznia</button>'; /* v6.50 */
   h += '<span class="badge ' + (placed === ls.length && ls.length > 0 ? "ok" : "err") + '">' + placed + "/" + ls.length + " lekcji ułożonych</span>";
   h += "</div>";
   if (unplaced.length){
