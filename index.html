@@ -164,7 +164,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.51.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.52.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -4261,9 +4261,11 @@ function studentPrintHtml(sid){
   h += '<style>body{font-family:system-ui,sans-serif;margin:24px;color:#111} h1{font-size:20px;margin:0 0 2px} .sub{color:#555;font-size:13px;margin-bottom:14px} table{border-collapse:collapse;width:100%} th,td{border:1px solid #999;padding:5px 7px;font-size:12px;text-align:left} th{background:#f0f0f0} .p1{background:#fff3cd;font-weight:700} .sub2{color:#666;font-size:11px} @media print{ .bar{display:none} }</style></head><body>';
   h += '<div class="bar"><button onclick="window.print()">🖨️ DRUKUJ</button></div>';
   h += '<h1>Plan zajęć — ' + esc(name) + '</h1>';
-  h += '<p class="sub">Klasa ' + esc(cls) + (c && c.roomId ? ' · sala ' + esc(roomName(c.roomId)) : '') + ' · tydzień ' + esc(planWeek) + ' · wygenerowano ' + new Date().toLocaleDateString("pl-PL") + '</p>';
+  var mondayP = planMonday || mondayOf(new Date());
+  var wdP = weekDates(mondayP);
+  h += '<p class="sub">Klasa ' + esc(cls) + (c && c.roomId ? ' · sala ' + esc(roomName(c.roomId)) : '') + ' · tydzień ' + esc(planWeek) + ' (' + wdP[0] + ' – ' + wdP[4] + ') · wygenerowano ' + new Date().toLocaleDateString("pl-PL") + '</p>';
   h += '<table><tr><th>Godz.</th>';
-  for (var d = 0; d < 5; d++) h += "<th>" + DAYS[d] + "</th>";
+  for (var d = 0; d < 5; d++){ var isoD2 = wdP[d], hol2 = isHoliday(isoD2); h += "<th" + (hol2 ? ' style="background:#fecaca"' : "") + ">" + DAYS[d] + "<br>" + isoD2.slice(5) + (hol2 ? " 🎌" : "") + "</th>"; }
   h += "</tr>";
   for (var hh = 0; hh < NH; hh++){
     h += "<tr><td>" + (hh + 1) + "<br><span class='sub2'>" + esc(lt[hh]) + "</span></td>";
