@@ -2378,6 +2378,18 @@ function importWarnings(rows){
   });
   return warn;
 }
+/* v6.52: dni wolne — CRUD + wbudowana lista */
+function holidayAdd(){
+  var dEl = document.getElementById("newHolidayDate"), nEl = document.getElementById("newHolidayName");
+  var dt = parseIso(dEl ? dEl.value : "");
+  if (!dt){ flash("⚠️ Wybierz poprawną datę (RRRR-MM-DD).", "err"); return; }
+  var iso = isoDate(dt), nm = nEl ? nEl.value.trim() : "";
+  if ((S.settings.holidays || []).indexOf(iso) < 0) S.settings.holidays.push(iso);
+  S.settings.holidayNames[iso] = nm || "dzień wolny";
+  save(); render();
+}
+function holidayDel(iso){ S.settings.holidays = (S.settings.holidays || []).filter(function(x){ return x !== iso; }); if (S.settings.holidayNames) delete S.settings.holidayNames[iso]; save(); render(); }
+function holidayLoadDefaults(){ defaultHolidays().forEach(function(h){ if (S.settings.holidays.indexOf(h[0]) < 0){ S.settings.holidays.push(h[0]); S.settings.holidayNames[h[0]] = h[1]; } }); save(); render(); flash("Wczytano wbudowaną listę świąt 2026/27 (bez nadpisywania własnych).", "ok"); }
 function analyze(){
   var ta = document.getElementById("importText");
   importText = ta ? ta.value : importText;
@@ -3094,6 +3106,16 @@ function renderOgr(){
     + '<span class="lbl">waga:</span><input id="r_w" class="inp" style="width:64px" type="number" min="10" value="' + esc(ruleDraft.w) + '"' + (ruleDraft.hard === "soft" ? "" : " disabled") + "></div>";
   h += '<div class="row"><button class="btn" onclick="ruleSave()">' + (ruleEditId ? "💾 Zapisz zmiany" : "➕ Dodaj regułę") + "</button>" + (ruleEditId ? '<button class="btn2" onclick="ruleCancel()">Anuluj</button>' : "") + "</div>";
   h += '<p class="hint">Przykłady: „Matematyka” tylko lekcje 1–4 · „Wych. fizyczne” nigdy ostatnie · „Rewalidacja” maks. 2 dziennie · „W-F” nie obok „Świetlicy” · „Język polski” min. 2 dni odstępu · „Plastyka” tylko Pn i Śr · „Muzyka” maks. 2 tygodniowo · „W-F” w blokach po 2 (2× obok siebie) · nauczyciel pracuje tylko Pn–Śr · nauczyciel ma „W-F” w maks. 2 dniach tygodnia · rewalidacje nauczyciela w blokach po 2 pod rząd. Reguły działają przy „🪄 Wygeneruj automatycznie” i w „✅ Sprawdź zasady”.</p>';
+  h += "</div></div>";
+  h += '<div class="card"><div class="hd">📅 Dni wolne od zajęć (święta, ferie, dni dyrektorskie) <span class="hint" style="font-weight:400">— widoczne w Planie przy wyborze tygodnia po dacie</span></div><div class="bd">';
+  var hols = (S.settings.holidays || []).slice().sort();
+  if (!hols.length) h += '<p class="hint">Brak dni wolnych — wczytaj wbudowaną listę albo dodaj ręcznie.</p>';
+  hols.forEach(function(iso){
+    h += '<div class="row"><span style="min-width:96px;font-weight:600">' + iso + '</span><span style="flex:1">' + esc(holidayName(iso) || "dzień wolny") + '</span><button class="del" title="Usuń" onclick="holidayDel(\'' + iso + '\')">✕</button></div>';
+  });
+  h += '<div class="row"><input type="date" id="newHolidayDate" class="inp"><input id="newHolidayName" class="inp" style="flex:1" placeholder="nazwa (np. Ferie zimowe)"><button class="btn" onclick="holidayAdd()">+ Dodaj</button>'
+     + '<button class="btn2" onclick="holidayLoadDefaults()">📥 Wczytaj święta 2026/27</button></div>';
+  h += '<p class="hint">Własne wpisy (np. ferie wg województwa, dni dyrektorskie) zostają — wbudowana lista tylko dopisuje brakujące.</p>';
   h += "</div></div>";
   h += '<div class="card"><div class="hd">🕐 Godziny lekcyjne</div><div class="bd"><div class="ltcnt">';
   var lt2 = lessonTimes();
