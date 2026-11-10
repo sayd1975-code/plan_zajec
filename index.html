@@ -1794,6 +1794,11 @@ function roomGroups(list){ /* v6.39: liczba spójnych grup klas w sali (zajęcia
 function dutyById(id){ var d = null; (S.duties || []).forEach(function(x){ if (x.id === id) d = x; }); return d; } /* v6.34 */
 function weekMatch(L, wk){ return !wk || !L.week || L.week === wk; } /* v6.35: pusty tydzień = oba tygodnie */
 function dutiesBySlot(dp){ var m = {}; Object.keys(dp || {}).forEach(function(did){ (dp[did] || []).forEach(function(sl){ (m[sl] = m[sl] || []).push(did); }); }); return m; } /* v6.34 */
+function studentClassId(sid){ for (var i = 0; i < S.classes.length; i++){ var st = (S.classes[i].students || []).filter(function(x){ return x.id === sid; })[0]; if (st) return S.classes[i].id; } return ""; } /* v6.50 */
+function studentLessons(sid){ /* pełny plan ucznia: zajęcia klasy + zajęcia 1:1 tego ucznia */
+  var cid = studentClassId(sid);
+  return lessons(planWeek).filter(function(L){ return L.classIds.indexOf(cid) >= 0 || L.studentId === sid; });
+} /* v6.50 */
 function studentsOf(cid){ var c = null; S.classes.forEach(function(x){ if (x.id === cid) c = x; }); return c ? (c.students || []) : []; } /* v6.33 */
 function studentName(sid){ for (var i = 0; i < S.classes.length; i++){ var st = (S.classes[i].students || []).filter(function(x){ return x.id === sid; })[0]; if (st) return st.name + ' (' + S.classes[i].name + ')'; } return sid || '?'; }
 function cRoomOf(a){ var c = null; S.classes.forEach(function(x){ if (x.id === a.classId) c = x; }); return c ? (c.roomId || '') : ''; } /* v6.32: sala macierzysta klasy zajęć */
@@ -3128,7 +3133,7 @@ function applyPlacement(np, okText){
 function cellClick(s){
   var ls = lessons(), placement = S.placement, bySlot = lessonsBySlot(ls, placement);
   var eff = viewSel;
-  var hereList = (bySlot[s] || []).filter(function(x){ return viewMode === "class" ? x.classIds.indexOf(eff) >= 0 : viewMode === "teacher" ? x.teacherId === eff : x.studentId === eff; });
+  var hereList = (bySlot[s] || []).filter(function(x){ return viewMode === "class" ? x.classIds.indexOf(eff) >= 0 : viewMode === "teacher" ? x.teacherId === eff : (x.classIds.indexOf(studentClassId(eff)) >= 0 || x.studentId === eff); });
   var here = hereList[0];
   if (sel == null){ if (here){ sel = here.id; render(); } return; }
   var SL = null; ls.forEach(function(l){ if (l.id === sel) SL = l; });
@@ -3200,7 +3205,7 @@ function renderPlan(){
   var dayLoads = [0, 0, 0, 0, 0];
   var trv = tripBlock(); var tEffV = null, cEffV = null; S.teachers.forEach(function(x){ if (x.id === eff) tEffV = x; }); S.classes.forEach(function(x){ if (x.id === eff) cEffV = x; }); /* v6.42: widoczne busy w planie */
   for (var s in bySlot){
-    var rel = bySlot[s].filter(function(x){ return viewMode === "class" ? x.classIds.indexOf(eff) >= 0 : viewMode === "teacher" ? x.teacherId === eff : x.studentId === eff; });
+    var rel = bySlot[s].filter(function(x){ return viewMode === "class" ? x.classIds.indexOf(eff) >= 0 : viewMode === "teacher" ? x.teacherId === eff : (x.classIds.indexOf(studentClassId(eff)) >= 0 || x.studentId === eff); });
     if (rel.length) dayLoads[Math.floor(s / NH)] += (viewMode === "class" || viewMode === "student" ? 1 : rel.length);
   }
   h += '<div style="overflow-x:auto"><table class="plan"><tr><th></th>';
@@ -3210,7 +3215,7 @@ function renderPlan(){
     h += '<tr><td class="day">' + DAYS[d] + '<br><span class="sub' + (dayLoads[d] > S.settings.classMaxPerDay ? " err" : "") + '">' + dayLoads[d] + " lek.</span></td>";
     for (var hh = 0; hh < NH; hh++){
       var s2 = d * NH + hh;
-      var relC = (bySlot[s2] || []).filter(function(x){ return viewMode === "class" ? x.classIds.indexOf(eff) >= 0 : viewMode === "teacher" ? x.teacherId === eff : x.studentId === eff; });
+      var relC = (bySlot[s2] || []).filter(function(x){ return viewMode === "class" ? x.classIds.indexOf(eff) >= 0 : viewMode === "teacher" ? x.teacherId === eff : (x.classIds.indexOf(studentClassId(eff)) >= 0 || x.studentId === eff); });
       var bl = S.settings.blockedSlots.indexOf(s2) >= 0;
       h += '<td onclick="cellClick(' + s2 + ')"' + (bl ? ' style="background:repeating-linear-gradient(45deg,transparent,transparent 5px,rgba(148,163,184,.18) 5px,rgba(148,163,184,.18) 10px)"' : '') + '>';
       relC.forEach(function(L){
