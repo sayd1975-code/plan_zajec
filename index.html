@@ -1874,6 +1874,7 @@ function renderDane(){
   S.classes.forEach(function(c){
     h += '<div class="row"><input class="inp" style="flex:1" value="' + esc(c.name) + '" onchange="renClass(\'' + c.id + '\',this.value)">'
        + '<select class="inp" style="max-width:130px" title="Sala macierzysta oddziału — uczniowie siedzą w niej na co dzień; nauczyciele przemieszczają się na zajęcia do innych sal" onchange="setClassRoom(\'" + c.id + "\',this.value)">' + roomOpts(c.roomId) + '</select>'
+       + '<input class="inp" type="number" min="0" max="60" style="width:52px;text-align:center" title="Norma godzin tygodniowo dla klasy (0 = bez kontroli przy imporcie)" value="' + (c.norm || 0) + '" onchange="setNorm(\'' + c.id + '\',this.value)">'
        + '<span class="badge">' + (hByC[c.id] || 0) + ' h/tydz.</span>'
        + '<button class="del" title="Usuń" onclick="delClass(\'' + c.id + '\')">✕</button></div>';
     (c.students || []).forEach(function(st){
@@ -1891,6 +1892,7 @@ function renderDane(){
   S.teachers.forEach(function(t){
     h += '<div class="row"><input class="inp" style="flex:1" value="' + esc(t.name) + '" onchange="renTeacher(\'' + t.id + '\',this.value)">'
        + '<input class="inp" style="width:58px;text-align:center" title="skrót" value="' + esc(t.short) + '" onchange="renShort(\'' + t.id + '\',this.value)">'
+       + '<input class="inp" type="number" min="0" max="40" style="width:52px;text-align:center" title="Etat w godzinach lekcyjnych (0 = bez kontroli przy imporcie)" value="' + (t.etat || 0) + '" onchange="setEtat(\'' + t.id + '\',this.value)">'
        + '<span class="badge">' + (hByT[t.id] || 0) + ' h</span>'
        + '<button class="btn2" title="Ograniczenia dostępności" onclick="ogrLink(\'' + t.id + '\')">⛔</button>'
        + '<button class="del" title="Usuń" onclick="delTeacher(\'' + t.id + '\')">✕</button></div>';
@@ -2012,6 +2014,13 @@ function renderDane(){
     var okN = importRows.filter(function(r){ return r.status !== "err"; }).length;
     var erN = importRows.length - okN;
     h += '<div style="margin-top:10px"><b>Podgląd: ' + okN + " do zaimportowania, " + erN + " odrzuconych</b>";
+    var warns = importWarnings(importRows);
+    if (warns.length){
+      h += '<div class="unplaced" style="border-color:#f59e0b;margin-top:6px"><b>⚠️ Kontrola przydziałów (' + warns.length + '):</b><ul style=\'margin:6px 0 0 18px\'>';
+      warns.slice(0, 15).forEach(function(w){ h += "<li>" + esc(w) + "</li>"; });
+      if (warns.length > 15) h += "<li>… oraz " + (warns.length - 15) + " dalszych</li>";
+      h += "</ul></div>";
+    }
     h += '<div class="prevtbl"><table><tr><th>Nauczyciel</th><th>Przedmiot</th><th>Klasa</th><th>Godz.</th><th>Grupa</th><th>Rodzaj</th><th>Status</th></tr>';
     importRows.forEach(function(r){
       h += '<tr class="' + (r.status === "err" ? "rer" : r.status === "warn" ? "rwr" : "") + '"><td>' + esc(r.teacher || "—") + "</td><td>" + esc(r.subject || "—") + "</td><td>" + esc(r.className || "—") + '</td><td style="text-align:right">' + (r.hours || "—") + "</td><td>" + (r.group ? esc(r.group) : "—") + "</td><td>" + (r.kind === "rew" ? "Rewalidacja" : r.kind === "swietl" ? "Świetlica" : "Dydaktyczne") + "</td><td>" + (r.status === "ok" ? "✓" : esc(r.note || "błąd")) + "</td></tr>";
@@ -2130,6 +2139,8 @@ function addTeacher(){
   S.teachers.push({ id: nextId(S.teachers, "t"), name: v, short: sh, unavail: [], unavailWhy: {} }); save(); render(); /* v6.42 */
 }
 function renTeacher(id, v){ S.teachers.forEach(function(t){ if (t.id === id) t.name = v; }); save(); render(); }
+function setEtat(id, v){ S.teachers.forEach(function(t){ if (t.id === id) t.etat = Math.max(0, Math.min(40, parseInt(v) || 0)); }); save(); render(); } /* v6.51 */
+function setNorm(id, v){ S.classes.forEach(function(c){ if (c.id === id) c.norm = Math.max(0, Math.min(60, parseInt(v) || 0)); }); save(); render(); } /* v6.51 */
 function renShort(id, v){ S.teachers.forEach(function(t){ if (t.id === id) t.short = v; }); save(); render(); }
 function delTeacher(id){
   if (S.activities.some(function(a){ return a.teacherId === id; })){ flash("Nie można usunąć — nauczyciel ma zajęcia.", "err"); return; }
@@ -2317,6 +2328,32 @@ function delAct(id){
   S.activities = S.activities.filter(function(a){ return a.id !== id; });
   Object.keys(S.placement).forEach(function(k){ if (k.indexOf(id + "-") === 0) delete S.placement[k]; });
   save(); render();
+}
+/* v6.51: walidacja przydziałów przy imporcie — etat, norma klasy, duplikaty w pliku */
+function importWarnings(rows){
+  var warn = [];
+  var byT = {}, byC = {}, seen = {};
+  rows.forEach(function(r){
+    if (r.status === "err") return;
+    var h = r.hours || 1;
+    if (r.teacher){ var k = r.teacher.toLowerCase().replace(/\s*\(.*?\)\s*$/, "").trim(); byT[k] = (byT[k] || 0) + h; }
+    var cn = (r.classNames && r.classNames.length ? r.classNames : [r.className]).filter(Boolean);
+    cn.forEach(function(nm){ var k2 = nm.toLowerCase(); byC[k2] = (byC[k2] || 0) + h; });
+    var dk = (r.teacher || "") + "|" + (r.subject || "") + "|" + (r.className || "") + "|" + (r.group || "");
+    if (seen[dk]) warn.push("duplikat w pliku: " + (r.teacher || "?") + " · " + r.subject + " · " + (r.className || "?") + (r.group ? " (grupa " + r.group + ")" : ""));
+    seen[dk] = true;
+  });
+  S.teachers.forEach(function(t){
+    var k = t.name.toLowerCase().replace(/\s*\(.*?\)\s*$/, "").trim();
+    var sum = byT[k];
+    if (sum != null && t.etat > 0 && sum > t.etat) warn.push(t.name + ": przydział " + sum + " h > etat " + t.etat + " h");
+    if (sum != null && t.etat > 0 && sum < t.etat - 2) warn.push(t.name + ": przydział " + sum + " h < etat " + t.etat + " h (brak " + (t.etat - sum) + " h)");
+  });
+  S.classes.forEach(function(c){
+    var sum = byC[c.name.toLowerCase()];
+    if (sum != null && c.norm > 0 && Math.abs(sum - c.norm) > 2) warn.push("Klasa " + c.name + ": przydział " + sum + " h, norma " + c.norm + " h (różnica " + (sum - c.norm) + ")");
+  });
+  return warn;
 }
 function analyze(){
   var ta = document.getElementById("importText");
