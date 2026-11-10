@@ -164,7 +164,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.50.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.51.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -2336,7 +2336,7 @@ function importWarnings(rows){
   rows.forEach(function(r){
     if (r.status === "err") return;
     var h = r.hours || 1;
-    if (r.teacher){ var k = r.teacher.toLowerCase().replace(/\s*\(.*?\)\s*$/, "").trim(); byT[k] = (byT[k] || 0) + h; }
+    if (r.teacher){ var k = r.teacher.toLowerCase().replace(/\s+/g, " ").replace(/\s*\(.*?\)\s*$/, "").trim().split(" ").sort().join(" "); byT[k] = (byT[k] || 0) + h; }
     var cn = (r.classNames && r.classNames.length ? r.classNames : [r.className]).filter(Boolean);
     cn.forEach(function(nm){ var k2 = nm.toLowerCase(); byC[k2] = (byC[k2] || 0) + h; });
     var dk = (r.teacher || "") + "|" + (r.subject || "") + "|" + (r.className || "") + "|" + (r.group || "");
@@ -2344,7 +2344,7 @@ function importWarnings(rows){
     seen[dk] = true;
   });
   S.teachers.forEach(function(t){
-    var k = t.name.toLowerCase().replace(/\s*\(.*?\)\s*$/, "").trim();
+    var k = t.name.toLowerCase().replace(/\s+/g, " ").replace(/\s*\(.*?\)\s*$/, "").trim().split(" ").sort().join(" "); /* jak samePerson — „Kowalska Anna” = „Anna Kowalska” */
     var sum = byT[k];
     if (sum != null && t.etat > 0 && sum > t.etat) warn.push(t.name + ": przydział " + sum + " h > etat " + t.etat + " h");
     if (sum != null && t.etat > 0 && sum < t.etat - 2) warn.push(t.name + ": przydział " + sum + " h < etat " + t.etat + " h (brak " + (t.etat - sum) + " h)");
