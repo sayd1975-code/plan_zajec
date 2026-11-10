@@ -3032,6 +3032,7 @@ function renderOgr(){
   h += '<div class="row"><select id="r_hard" class="inp" onchange="ruleDS(\'hard\')"><option value="hard"' + (ruleDraft.hard !== "soft" ? " selected" : "") + '>🔒 Twarda — zawsze</option><option value="soft"' + (ruleDraft.hard === "soft" ? " selected" : "") + '>🪶 Miękka — kara</option></select>'
     + '<span class="lbl">waga:</span><input id="r_w" class="inp" style="width:64px" type="number" min="10" value="' + esc(ruleDraft.w) + '"' + (ruleDraft.hard === "soft" ? "" : " disabled") + "></div>";
   h += '<div class="row"><button class="btn" onclick="ruleSave()">' + (ruleEditId ? "💾 Zapisz zmiany" : "➕ Dodaj regułę") + "</button>" + (ruleEditId ? '<button class="btn2" onclick="ruleCancel()">Anuluj</button>' : "") + "</div>";
+  if (viewMode === "student") h += '<button class="btn2" onclick="openStudentPrint()">🖨️ Wydrukuj plan ucznia</button>'; /* v6.50 */
   h += '<p class="hint">Przykłady: „Matematyka” tylko lekcje 1–4 · „Wych. fizyczne” nigdy ostatnie · „Rewalidacja” maks. 2 dziennie · „W-F” nie obok „Świetlicy” · „Język polski” min. 2 dni odstępu · „Plastyka” tylko Pn i Śr · „Muzyka” maks. 2 tygodniowo · „W-F” w blokach po 2 (2× obok siebie) · nauczyciel pracuje tylko Pn–Śr · nauczyciel ma „W-F” w maks. 2 dniach tygodnia · rewalidacje nauczyciela w blokach po 2 pod rząd. Reguły działają przy „🪄 Wygeneruj automatycznie” i w „✅ Sprawdź zasady”.</p>';
   h += "</div></div>";
   h += '<div class="card"><div class="hd">🕐 Godziny lekcyjne</div><div class="bd"><div class="ltcnt">';
@@ -3222,7 +3223,7 @@ function renderPlan(){
         var stName = (viewMode === "class" && L.studentId) ? ((studentsOf(L.classIds[0]).filter(function(st){ return st.id === L.studentId; })[0] || {}).name || "?") : ""; /* v6.41: uczeń na terapii 1:1 */
         h += '<div class="chip c' + colorIdx(L.subject) + (sel === L.id ? " sel" : "") + '" onclick="event.stopPropagation();chipClick(\'' + L.id + '\')" oncontextmenu="unassign(\'' + L.id + '\',event)" title="' + esc(L.subject) + (stName ? " — " + esc(stName) : "") + (L.link ? " (↔ " + L.link + ")" : "") + " — prawy klik usuwa z planu\">"
            + '<span class="subj">' + (stName ? "👤 " : "") + esc(L.subject) + "</span>"
-           + '<span class="sub">' + esc(viewMode === "class" ? (stName ? stName + " • " + tShort(L.teacherId) : tShort(L.teacherId)) : viewMode === "teacher" ? L.classIds.map(cName).join("+") : cName(L.classIds[0])) + "</span>"
+           + '<span class="sub">' + esc(viewMode === "class" ? (stName ? stName + " • " + tShort(L.teacherId) : tShort(L.teacherId)) : viewMode === "teacher" ? L.classIds.map(cName).join("+") : cName(L.classIds[0]) + (L.studentId === eff ? " 👤" : "")) + "</span>"
            + (kindL(L) === "rew" ? ' <span class="sub" title="Godzina rewalidacyjna (60 min): zaczyna się przed dzwonkiem">⏱' + rewSpan(hh) + "</span>" : "") /* v6.45: czas zegarowy przy rewalidacji */
            + (function(){ var r = effRoomId(L); var home = cRoomOf({ classId: L.classIds[0] }); if (r && r !== home) return ' <span class="sub" title="Sala">📍' + esc(roomName(r)) + "</span>"; return ""; })() + "</div>";
       });
@@ -4151,6 +4152,54 @@ function zastPrintHtml(){ /* v6.28: kartka zastępstw do druku — A4, puste pol
   return '<!DOCTYPE html><html lang="pl"><head><meta charset="utf-8"><title>Zastępstwa — ' + esc(DAYS[di]) + '</title>' + css + '</head><body>'
     + '<div class="bar"><button onclick="window.print()">🖨️ DRUKUJ</button><span style="font-size:3.6mm;opacity:.85">Kartka zastępstw — pole „Zastępuje" wypełnij ręcznie po wydruku.</span></div>'
     + '<div class="pg">' + b + '</div></body></html>';
+}
+/* v6.50: wydruk planu ucznia (A4) */
+function studentPrintHtml(sid){
+  var cid = studentClassId(sid);
+  var c = null; S.classes.forEach(function(x){ if (x.id === cid) c = x; });
+  var st = null; (c ? c.students : []).forEach(function(x){ if (x.id === sid) st = x; });
+  var name = st ? st.name : sid;
+  var cls = c ? c.name : "—";
+  var ls = studentLessons(sid);
+  var bySlot = lessonsBySlot(ls, S.placement);
+  var lt = lessonTimes();
+  var h = '<!doctype html><html lang="pl"><head><meta charset="utf-8"><title>Plan ucznia — ' + esc(name) + '</title>';
+  h += '<style>body{font-family:system-ui,sans-serif;margin:24px;color:#111} h1{font-size:20px;margin:0 0 2px} .sub{color:#555;font-size:13px;margin-bottom:14px} table{border-collapse:collapse;width:100%} th,td{border:1px solid #999;padding:5px 7px;font-size:12px;text-align:left} th{background:#f0f0f0} .p1{background:#fff3cd;font-weight:700} .sub2{color:#666;font-size:11px} @media print{ .bar{display:none} }</style></head><body>';
+  h += '<div class="bar"><button onclick="window.print()">🖨️ DRUKUJ</button></div>';
+  h += '<h1>Plan zajęć — ' + esc(name) + '</h1>';
+  h += '<p class="sub">Klasa ' + esc(cls) + (c && c.roomId ? ' · sala ' + esc(roomName(c.roomId)) : '') + ' · tydzień ' + esc(planWeek) + ' · wygenerowano ' + new Date().toLocaleDateString("pl-PL") + '</p>';
+  h += '<table><tr><th>Godz.</th>';
+  for (var d = 0; d < 5; d++) h += "<th>" + DAYS[d] + "</th>";
+  h += "</tr>";
+  for (var hh = 0; hh < NH; hh++){
+    h += "<tr><td>" + (hh + 1) + "<br><span class='sub2'>" + esc(lt[hh]) + "</span></td>";
+    for (var d2 = 0; d2 < 5; d2++){
+      var s2 = d2 * NH + hh;
+      var rel = (bySlot[s2] || []);
+      if (!rel.length){ h += "<td>—</td>"; continue; }
+      h += "<td>";
+      rel.forEach(function(L){
+        var is1 = L.studentId === sid;
+        h += '<div class="' + (is1 ? "p1" : "") + '">' + esc(L.subject) + (is1 ? " 👤" : "") + '<br><span class="sub2">' + esc(tShort(L.teacherId));
+        var r = effRoomId(L);
+        if (r) h += ' · 📍 ' + esc(roomName(r));
+        h += "</span></div>";
+      });
+      h += "</td>";
+    }
+    h += "</tr>";
+  }
+  h += "</table>";
+  h += '<p class="sub" style="margin-top:10px">👤 = zajęcia indywidualne (1:1) tego ucznia · 📍 = sala (gdy inna niż macierzysta klasy). Bez 👤 — zajęcia całej klasy.</p>';
+  h += "</body></html>";
+  return h;
+}
+function openStudentPrint(){
+  if (viewMode !== "student" || !viewSel){ flash("Najpierw wybierz widok „uczeń” i ucznia w Planie.", "warn"); return; }
+  var w = window.open("", "_blank");
+  if (!w){ flash("Przeglądarka zablokowała okna — zezwól na wyskakujące i spróbuj ponownie.", "err"); return; }
+  w.document.write(studentPrintHtml(viewSel));
+  w.document.close();
 }
 function openZastPrint(){
   var zd = zastData();
