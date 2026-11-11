@@ -164,7 +164,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.58.
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.59.
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -3313,15 +3313,30 @@ function runAuto(){
   var ls = lessons(planWeek);
   if (!ls.length){ flash("Najpierw dodaj oddziały, nauczycieli i zajęcia w zakładce Dane.", "warn"); return; }
   var res = autoSchedule(ls, S.teachers, S.classes, S.settings, 25);
+  undoPush(); /* v6.59: automat da się cofnąć */
   S.placement = res.placement; sel = null; save(); render();
   if (res.unplaced.length === 0) flash("✅ Ułożono wszystkie " + ls.length + " lekcji.", "ok");
   else flash("Ułożono " + (ls.length - res.unplaced.length) + "/" + ls.length + ". Nieprzypisane dociśnij ręcznie (czerwone chipsy).", "warn");
 }
-function clearPlan(){ S.placement = {}; sel = null; save(); render(); flash("Plan wyczyszczony.", "ok"); }
+function clearPlan(){ undoPush(); S.placement = {}; sel = null; save(); render(); flash("Plan wyczyszczony — ↩ Cofnij przywróci całość.", "ok"); }
 function applyPlacement(np, okText){
   var errs = findViolations(lessons(), S.teachers, S.classes, np, S.settings);
   if (errs.length){ flash("⛔ " + errs[0], "err"); return; }
+  undoPush();
   S.placement = np; sel = null; save(); render(); flash(okText, "ok");
+}
+/* ==================== v6.59: undo ×N ==================== */
+var undoStack = []; /* stos kopii placementu — cofanie ruchów ręcznych, czyszczenia i automatu (maks. 50) */
+function undoPush(){
+  if (!S || !S.placement) return;
+  undoStack.push(Object.assign({}, S.placement));
+  if (undoStack.length > 50) undoStack.shift();
+}
+function undoPop(){
+  if (!undoStack.length) return;
+  S.placement = undoStack.pop();
+  sel = null; save(); render();
+  flash("↩ Cofnięto — plan wrócił do poprzedniego stanu (" + undoStack.length + " kroków w zapasie).", "ok");
 }
 function cellClick(s){
   var ls = lessons(), placement = S.placement, bySlot = lessonsBySlot(ls, placement);
@@ -3350,6 +3365,7 @@ function cellClick(s){
 function unassign(id, ev){
   if (ev) ev.preventDefault();
   var L0 = null; lessons().forEach(function(l){ if (l.id === id) L0 = l; });
+  if (L0) undoPush(); /* v6.59: ruch do cofnięcia */
   if (L0 && L0.link){ var ixU = (id.split("-")[1] || "0"); lessons().forEach(function(l){ if (l.link === L0.link && (l.id.split("-")[1] || "0") === ixU) delete S.placement[l.id]; }); }
   else delete S.placement[id];
   if (sel === id) sel = null;
@@ -3362,6 +3378,14 @@ function planWeekMonday(){ return mondayOf(planDay || new Date()); }
 function planWeekSet(v){ var dt = parseIso(v); if (dt) planDay = dt; render(); } /* v6.55: bez snapania do poniedziałku */
 function planWeekNav(n){ var base = planDay || new Date(); planDay = addDays(base, n); render(); }
 function planWeekToday(){ planDay = null; render(); }
+var planTranspose = false; /* v6.59: układ siatki planu — false = dni w wierszach (dotychczasowy), true = dni w kolumnach, lekcje w wierszach */
+var LS_TP = "pz-transpose"; /* v6.59: zapamiętany układ siatki */
+function toggleTranspose(){
+  planTranspose = !planTranspose;
+  try{ localStorage.setItem(LS_TP, planTranspose ? "1" : "0"); }catch(e){}
+  render();
+  flash(planTranspose ? "🔄 Układ: dni w poziomie, lekcje w pionie." : "🔄 Układ: dni w pionie, lekcje w poziomie.", "ok");
+}
 function renderPlan(){
   var ls = lessons(planWeek), placement = S.placement;
   var unplaced = ls.filter(function(l){ return placement[l.id] == null; });
@@ -3386,11 +3410,13 @@ function renderPlan(){
   h += '<input type="date" class="inp" style="width:150px" value="' + dayNow + '" onchange="planWeekSet(this.value)" title="data — plan pokazuje jej tydzień">';
   h += '<button class="btn2" onclick="planWeekNav(7)">▶</button>';
   h += '<button class="btn2" onclick="planWeekToday()">Dziś</button>';
+  h += '<button class="btn2" onclick="toggleTranspose()" title="Przełącz układ siatki planu">🔄 ' + (planTranspose ? "dni poziomo" : "lekcje poziomo") + "</button>";
   h += '<span class="badge">' + wNow[0].slice(5) + ' – ' + wNow[4].slice(5) + '</span>';
   if (!(S.settings.holidays || []).length) h += '<span class="hint">Brak dni wolnych — wczytaj listę w ⛔ Ograniczenia → 📅 Dni wolne.</span>'; /* v6.53 */
   h += '<button class="btn" onclick="runAuto()">🪄 Wygeneruj automatycznie</button>';
   h += '<button class="btn2" onclick="confirmClick(\'plan\',clearPlan)">' + (confirmKey === "plan" ? "Na pewno wyczyścić?" : "🧹 Wyczyść plan") + "</button>";
   h += '<button class="btn2" onclick="checkRules()">✅ Sprawdź zasady</button>';
+  h += '<button class="btn2"' + (undoStack.length ? "" : " disabled") + ' onclick="undoPop()">↩ Cofnij' + (undoStack.length ? " (" + undoStack.length + ")" : "") + "</button>";
   if (viewMode === "student") h += '<button class="btn2" onclick="openStudentPrint()">🖨️ Wydrukuj plan ucznia</button>'; /* v6.50 */
   h += '<span class="badge ' + (placed === ls.length && ls.length > 0 ? "ok" : "err") + '">' + placed + "/" + ls.length + " lekcji ułożonych</span>";
   h += "</div>";
@@ -3416,46 +3442,106 @@ function renderPlan(){
     var rel = bySlot[s].filter(function(x){ return viewMode === "class" ? x.classIds.indexOf(eff) >= 0 : viewMode === "teacher" ? x.teacherId === eff : (x.classIds.indexOf(studentClassId(eff)) >= 0 || x.studentId === eff); });
     if (rel.length) dayLoads[Math.floor(s / NH)] += (viewMode === "class" || viewMode === "student" ? 1 : rel.length);
   }
-  h += '<div style="overflow-x:auto"><table class="plan"><tr><th></th>';
-  for (var i = 0; i < NH; i++) h += "<th>lek. " + (i + 1) + "<br><span class='sub'>" + esc(lt[i]) + "</span></th>";
-  h += "</tr>";
-  for (var d = 0; d < 5; d++){
-    var wdates = weekDates(planWeekMonday());
-    var isoD = wdates[d], hol = isHoliday(isoD);
-    h += '<tr><td class="day"' + (hol ? ' style="background:#fee2e2"' : '') + '>' + DAYS[d] + '<br><span class="sub">' + isoD.slice(5) + (hol ? ' 🎌 ' + esc(holidayName(isoD)) : '') + '</span><br><span class="sub' + (dayLoads[d] > S.settings.classMaxPerDay ? " err" : "") + '">' + (hol ? "wolne" : dayLoads[d] + " lek.") + "</span></td>";
-    for (var hh = 0; hh < NH; hh++){
-      var s2 = d * NH + hh;
-      var relC = (bySlot[s2] || []).filter(function(x){ return viewMode === "class" ? x.classIds.indexOf(eff) >= 0 : viewMode === "teacher" ? x.teacherId === eff : (x.classIds.indexOf(studentClassId(eff)) >= 0 || x.studentId === eff); });
-      var bl = S.settings.blockedSlots.indexOf(s2) >= 0;
-      h += '<td onclick="cellClick(' + s2 + ')"' + (bl ? ' style="background:repeating-linear-gradient(45deg,transparent,transparent 5px,rgba(148,163,184,.18) 5px,rgba(148,163,184,.18) 10px)"' : '') + '>';
-      relC.forEach(function(L){
-        var stName = (viewMode === "class" && L.studentId) ? ((studentsOf(L.classIds[0]).filter(function(st){ return st.id === L.studentId; })[0] || {}).name || "?") : ""; /* v6.41: uczeń na terapii 1:1 */
-        h += '<div class="chip c' + colorIdx(L.subject) + (sel === L.id ? " sel" : "") + '" onclick="event.stopPropagation();chipClick(\'' + L.id + '\')" oncontextmenu="unassign(\'' + L.id + '\',event)" title="' + esc(L.subject) + (stName ? " — " + esc(stName) : "") + (L.link ? " (↔ " + L.link + ")" : "") + " — prawy klik usuwa z planu\">"
+  function cellTd(s2){ /* v6.59: komórka siatki — wspólna dla obu układów */
+    var relC = (bySlot[s2] || []).filter(function(x){ return viewMode === "class" ? x.classIds.indexOf(eff) >= 0 : viewMode === "teacher" ? x.teacherId === eff : (x.classIds.indexOf(studentClassId(eff)) >= 0 || x.studentId === eff); });
+    var bl = S.settings.blockedSlots.indexOf(s2) >= 0;
+    var hC = '<td onclick="cellClick(' + s2 + ')"' + (bl ? ' style="background:repeating-linear-gradient(45deg,transparent,transparent 5px,rgba(148,163,184,.18) 5px,rgba(148,163,184,.18) 10px)"' : '') + '>';
+    relC.forEach(function(L){
+      var stName = (viewMode === "class" && L.studentId) ? ((studentsOf(L.classIds[0]).filter(function(st){ return st.id === L.studentId; })[0] || {}).name || "?") : "";
+      hC += '<div class="chip c' + colorIdx(L.subject) + (sel === L.id ? " sel" : "") + '" onclick="event.stopPropagation();chipClick(\'' + L.id + '\')" oncontextmenu="unassign(\'' + L.id + '\',event)" title="' + esc(L.subject) + (stName ? " — " + esc(stName) : "") + (L.link ? " (↔ " + L.link + ")" : "") + " — prawy klik usuwa z planu\">"
            + '<span class="subj">' + (stName ? "👤 " : "") + esc(L.subject) + "</span>"
            + '<span class="sub">' + esc(viewMode === "class" ? (stName ? stName + " • " + tShort(L.teacherId) : tShort(L.teacherId)) : viewMode === "teacher" ? L.classIds.map(cName).join("+") : cName(L.classIds[0]) + (L.studentId === eff ? " 👤" : "")) + "</span>"
-           + (kindL(L) === "rew" ? ' <span class="sub" title="Godzina rewalidacyjna (60 min): zaczyna się przed dzwonkiem">⏱' + rewSpan(hh) + "</span>" : "") /* v6.45: czas zegarowy przy rewalidacji */
+           + (kindL(L) === "rew" ? ' <span class="sub" title="Godzina rewalidacyjna (60 min): zaczyna się przed dzwonkiem">⏱' + rewSpan(s2 % NH) + "</span>" : "")
            + (function(){ var r = effRoomId(L); var home = cRoomOf({ classId: L.classIds[0] }); if (r && r !== home) return ' <span class="sub" title="Sala">📍' + esc(roomName(r)) + "</span>"; return ""; })() + "</div>";
-      });
-      if (!relC.length){ /* v6.42: puste pole pokazuje busy — wyjazd albo blokada z powodem */
-        var cellNote = "";
-        if (viewMode === "teacher"){
-          if (trv.t[eff] && trv.t[eff][s2]) cellNote = "🚌 " + esc(trv.t[eff][s2]);
-          else if (tEffV && (tEffV.unavail || []).indexOf(s2) >= 0) cellNote = "✕" + (tEffV.unavailWhy && tEffV.unavailWhy[s2] ? " " + esc(tEffV.unavailWhy[s2]) : "");
-        } else if (viewMode === "class"){
-          if (trv.c[eff] && trv.c[eff][s2]) cellNote = "🚌 " + esc(trv.c[eff][s2]);
-          else if (cEffV && (cEffV.blocked || []).indexOf(s2) >= 0) cellNote = "⛔";
-        }
-        if (cellNote) h += '<div class="tripcell"' + (cellNote === "⛔" ? ' title="Godzina zablokowana dla oddziału (⛔ Ograniczenia)"' : "") + ">" + cellNote + "</div>";
+    });
+    if (!relC.length){
+      var cellNote = "";
+      if (viewMode === "teacher"){
+        if (trv.t[eff] && trv.t[eff][s2]) cellNote = "🚌 " + esc(trv.t[eff][s2]);
+        else if (tEffV && (tEffV.unavail || []).indexOf(s2) >= 0) cellNote = "✕" + (tEffV.unavailWhy && tEffV.unavailWhy[s2] ? " " + esc(tEffV.unavailWhy[s2]) : "");
+      } else if (viewMode === "class"){
+        if (trv.c[eff] && trv.c[eff][s2]) cellNote = "🚌 " + esc(trv.c[eff][s2]);
+        else if (cEffV && (cEffV.blocked || []).indexOf(s2) >= 0) cellNote = "⛔";
       }
-      h += "</td>";
+      if (cellNote) hC += '<div class="tripcell"' + (cellNote === "⛔" ? ' title="Godzina zablokowana dla oddziału (⛔ Ograniczenia)"' : "") + ">" + cellNote + "</div>";
+    }
+    return hC + "</td>";
+  }
+  var wdGrid = weekDates(planWeekMonday());
+  h += '<div style="overflow-x:auto"><table class="plan"><tr><th></th>';
+  if (planTranspose){ /* v6.59: dni w kolumnach, lekcje w wierszach */
+    for (var dT = 0; dT < 5; dT++){
+      var isoT = wdGrid[dT], holT = isHoliday(isoT);
+      h += "<th" + (holT ? ' style="background:#fee2e2"' : "") + ">" + DAYS[dT] + "<br><span class='sub'>" + isoT.slice(5) + (holT ? " 🎌 " + esc(holidayName(isoT)) : "") + "</span><br><span class='sub" + (dayLoads[dT] > S.settings.classMaxPerDay ? " err" : "") + "'>" + (holT ? "wolne" : dayLoads[dT] + " lek.") + "</span></th>";
     }
     h += "</tr>";
+    for (var hhT = 0; hhT < NH; hhT++){
+      h += '<tr><td class="day">lek. ' + (hhT + 1) + "<br><span class='sub'>" + esc(lt[hhT]) + "</span></td>";
+      for (var dT2 = 0; dT2 < 5; dT2++) h += cellTd(dT2 * NH + hhT);
+      h += "</tr>";
+    }
+  } else {
+    for (var i = 0; i < NH; i++) h += "<th>lek. " + (i + 1) + "<br><span class='sub'>" + esc(lt[i]) + "</span></th>";
+    h += "</tr>";
+    for (var d = 0; d < 5; d++){
+      var isoD = wdGrid[d], hol = isHoliday(isoD);
+      h += '<tr><td class="day"' + (hol ? ' style="background:#fee2e2"' : '') + '>' + DAYS[d] + '<br><span class="sub">' + isoD.slice(5) + (hol ? ' 🎌 ' + esc(holidayName(isoD)) : '') + '</span><br><span class="sub' + (dayLoads[d] > S.settings.classMaxPerDay ? " err" : "") + '">' + (hol ? "wolne" : dayLoads[d] + " lek.") + "</span></td>";
+      for (var hh = 0; hh < NH; hh++) h += cellTd(d * NH + hh);
+      h += "</tr>";
+    }
   }
   h += "</table></div>";
   h += '<p class="hint">📍 przy zajęciach = sala inna niż macierzysta klasy (uczniowie idą do gabinetu, nauczyciel przychodzi do klasy). Sala mieści tyle różnych klas naraz, ile wynosi jej pojemność w Dane → Sale (domyślnie 1). 👤 przy zajęciach w widoku oddziału = uczeń jest wtedy na zajęciach indywidualnych 1:1 (rewalidacja) poza klasą. 🚌 na wolnym polu = wyjazd/wycieczka (nauczyciel albo oddział poza szkołą); ✕ z podpisem = nazwana blokada nauczyciela.</p>';
   h += '<p class="hint">Klik lekcja → wolne pole = przeniesienie • lekcja → lekcja = zamiana • prawy klik = usuń z planu. Program pilnuje dostępności nauczycieli, podwójnych lekcji i limitów dziennych, a także zasad z wytycznych: zablokowane godziny (siatka w Zasadach planu), okienka, bloki AUT, powiązania tej samej godziny i pary przedmiotów.</p>';
+  var vv = variantsAll();
+  h += '<div class="card"><div class="hd"><span>💾 Warianty planu</span></div><div class="bd">';
+  h += '<div class="row"><input class="inp" id="varName" placeholder="nazwa wariantu" style="width:200px">'
+     + '<button class="btn2" onclick="variantSaveUI()">💾 Zapisz bieżący</button>';
+  var vNames = Object.keys(vv);
+  if (vNames.length){
+    vNames.sort();
+    h += '<select class="inp" id="varSel">' + vNames.map(function(n){ return '<option value="' + esc(n) + '">' + esc(n) + " (" + vv[n].placed + "/" + vv[n].total + ')</option>'; }).join("") + "</select>"
+       + '<button class="btn2" onclick="variantLoadUI()">📂 Wczytaj</button>'
+       + '<button class="btn2" onclick="variantDelUI()">🗑 Usuń</button>';
+  } else h += '<span class="hint">Brak zapisanych wariantów — zapisz bieżący plan, zanim zaczniesz przerabiać.</span>';
+  h += "</div>";
+  h += '<p class="hint">Wariant = zdjęcie ułożonego planu pod nazwą (liczby: lekcje ułożone/wszystkie). Zapisz przed eksperymentem, potem wczytaj albo porównaj wyniki. Wczytanie można cofnąć przyciskiem ↩ Cofnij.</p>';
+  h += "</div></div>";
   return h;
 }
+
+/* ==================== v6.59: warianty planu ==================== */
+var LS_VAR = "pz-warianty"; /* nazwane zdjęcia ułożonego planu */
+function variantsAll(){ try{ return JSON.parse(localStorage.getItem(LS_VAR) || "{}") || {}; }catch(e){ return {}; } }
+function variantsSaveAll(v){ try{ localStorage.setItem(LS_VAR, JSON.stringify(v)); }catch(e){} }
+function variantSave(name){
+  var v = variantsAll();
+  var ls = lessons();
+  var placed = ls.filter(function(L){ return S.placement[L.id] != null; }).length;
+  v[name] = { placement: Object.assign({}, S.placement), savedAt: zastTodayStr(), placed: placed, total: ls.length };
+  variantsSaveAll(v);
+  render();
+  flash("💾 Zapisano wariant „" + name + "” (" + placed + "/" + ls.length + " ułożonych).", "ok");
+}
+function variantLoad(name){
+  var w = variantsAll()[name];
+  if (!w || !w.placement){ flash("Nie ma wariantu „" + name + "”.", "err"); return; }
+  undoPush();
+  S.placement = Object.assign({}, w.placement);
+  prunePlacement(); sel = null; save(); render();
+  flash("📂 Wczytano wariant „" + name + "” (" + w.placed + "/" + w.total + " ułożonych).", "ok");
+}
+function variantDelete(name){
+  var v = variantsAll();
+  if (!v[name]) return;
+  delete v[name];
+  variantsSaveAll(v);
+  render();
+  flash("🗑 Usunięto wariant „" + name + "”.", "ok");
+}
+function variantSaveUI(){ var e2 = document.getElementById("varName"); var n = e2 && e2.value ? String(e2.value).trim() : ""; if (!n){ flash("Podaj nazwę wariantu.", "warn"); return; } variantSave(n); }
+function variantLoadUI(){ var e2 = document.getElementById("varSel"); if (e2 && e2.value) variantLoad(e2.value); }
+function variantDelUI(){ var e2 = document.getElementById("varSel"); if (e2 && e2.value) variantDelete(e2.value); }
 
 /* ---------- zakładka EKSPORT ---------- */
 function eksModeSet(m){ eksMode = m; render(); }
@@ -4066,6 +4152,7 @@ function renderEks(){
      + '<button class="btn2" onclick="icsDownloadAll(\'teacher\')">📅 iCal — nauczyciele (.ics)</button>'
      + '<button class="btn2" onclick="icsDownloadAll(\'class\')">📅 iCal — klasy (.ics)</button>'
      + '<button class="btn2" onclick="downloadPlanHtml()">🌐 HTML — cała szkoła</button>'
+     + '<button class="btn2" onclick="downloadEdziennik()">🏫 E-dziennik (.xlsx)</button>'
      + '<label class="lbl">📅 iCal od:</label><input type="date" class="inp" style="width:auto" value="' + esc(S.settings.icsFrom || "") + '" onchange="setIcsFrom(this.value)" title="Poniedziałek, od którego iCal zaczyna powtarzać lekcje (przy rotacji A/B: tydzień A). Puste = bieżący tydzień.">'
      + "</div>";
   h += '<textarea id="eksText" class="inp ta big" readonly>' + esc(eksText()) + "</textarea>";
@@ -4076,6 +4163,7 @@ function renderEks(){
   h += '<p class="hint">📊 A1 — Excel i 🖼️ A1 — wydruk (v6.20): plansza w konwencji szkolnego szablonu A1 — kolumny oddziałów (szkolne kody: 1a, 2aA, 5z…), Świetlica i kolumny nauczycieli (nagłówki: inicjały nauczyciela jak w Zbiorczej; w komórce kod klasy, którą wtedy prowadzą), godziny wierszami. Excel: plik .xlsx do dalszej edycji; wydruk: A1 poziomo. Ułożony plan wypełnia wszystko automatycznie.</p>';
   h += '<p class="hint">📅 iCal (v6.58): każdy nauczyciel i oddział dostaje własny plik .ics — wpięcie w Google: calendar.google.com → koło zębate Ustawienia → Importuj i eksportuj; w telefonie wystarczy otworzyć plik. Lekcje powtarzają się co tydzień (rotacja A/B: co drugi) do 30 czerwca roku szkolnego; dni wolne z zakładki ⛔ są pomijane. Pole „iCal od” ustawia poniedziałek startu (przy A/B: tydzień A). Przeglądarka może zapytać o zgodę na pobranie wielu plików naraz — zgódź się.</p>';
   h += '<p class="hint">🌐 HTML (v6.58): jeden samowystarczalny plik plan-szkoly.html z planami wszystkich oddziałów i nauczycieli (spis treści u góry) — do wysłania mailem, wrzucenia na stronę szkoły albo wydruku; otwiera się bez internetu i bez aplikacji.</p>';
+  h += '<p class="hint">🏫 E-dziennik (v6.59): plik .xlsx pod ręczne wprowadzenie planu w e-dzienniku Vulcan UONET+ — arkusz na każdy oddział w układzie wprowadzania (dni w kolumnach, godziny w wierszach, w komórce przedmiot, nauczyciel i sala), na końcu arkusz zbiorczy nauczycieli. Program Vulcan nie importuje planów z plików zewnętrznych (jego format .PLA jest zamknięty), więc ten plik jest pomocnikiem do przepisywania — razem z planszami A3 i HTML-em.</p>';
   h += "</div></div>";
   return h;
 }
@@ -4209,10 +4297,125 @@ function planHtmlDoc(){ /* v6.58: samowystarczalny plik HTML z planami wszystkic
 function downloadPlanHtml(){ /* v6.58: pobiera plan-szkoly.html */
   downloadFile("plan-szkoly.html", planHtmlDoc(), "text/html;charset=utf-8");
 }
+/* ==================== v6.59: eksport e-dziennik (Vulcan UONET+ — wprowadzanie ręczne) ==================== */
+function sheetNameSafe(n){ var s = String(n).replace(/[\[\]:*?\/\\]/g, "-").slice(0, 31).trim(); return s || "Arkusz"; }
+function xlsxMultiParts(sheets){ /* v6.59: xlsx z wieloma arkuszami — Content_Types, workbook i rels generowane pętlą */
+  var styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+    + '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>'
+    + '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>'
+    + '<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border>'
+    + '<border><left style="thin"><color auto="1"/></left><right style="thin"><color auto="1"/></right><top style="thin"><color auto="1"/></top><bottom style="thin"><color auto="1"/></bottom><diagonal/></border></borders>'
+    + '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+    + '<cellXfs count="4">'
+    + '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
+    + '<xf numFmtId="0" fontId="1" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>'
+    + '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"/>'
+    + '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="top" wrapText="1"/></xf>'
+    + '</cellXfs>'
+    + '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
+  var contentTypes = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+    + '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>'
+    + '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+    + sheets.map(function(sh, i){ return '<Override PartName="/xl/worksheets/sheet' + (i + 1) + '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'; }).join("")
+    + '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>';
+  var rootRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>';
+  var workbook = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'
+    + sheets.map(function(sh, i){ return '<sheet name="' + esc(sh.name) + '" sheetId="' + (i + 1) + '" r:id="rId' + (i + 1) + '"/>'; }).join("") + "</sheets></workbook>";
+  var wbRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+    + sheets.map(function(sh, i){ return '<Relationship Id="rId' + (i + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet' + (i + 1) + '.xml"/>'; }).join("")
+    + '<Relationship Id="rId' + (sheets.length + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>';
+  var entries = [
+    { name: "[Content_Types].xml", data: contentTypes },
+    { name: "_rels/.rels", data: rootRels },
+    { name: "xl/workbook.xml", data: workbook },
+    { name: "xl/_rels/workbook.xml.rels", data: wbRels },
+    { name: "xl/styles.xml", data: styles }
+  ];
+  sheets.forEach(function(sh, i){ entries.push({ name: "xl/worksheets/sheet" + (i + 1) + ".xml", data: sh.xml }); });
+  return entries;
+}
+function edziennikXlsxParts(){ /* v6.59: arkusz na oddział (dni kolumnami, godziny wierszami — układ wprowadzania w UONET+) + arkusz zbiorczy nauczycieli */
+  var lt = lessonTimes();
+  var wks = S.settings.weekAB ? ["A", "B"] : [""];
+  function cStr(col, row, sIdx, txt){ return '<c r="' + a1ColLetter(col) + row + '" s="' + sIdx + '" t="inlineStr"><is><t xml:space="preserve">' + esc(txt) + "</t></is></c>"; }
+  function cEmp(col, row, sIdx){ return '<c r="' + a1ColLetter(col) + row + '" s="' + sIdx + '"/>'; }
+  function roomOf2(L){ var r = roomName(effRoomId(L)); return r && r !== "?" ? r : ""; }
+  function cellTxt(L){ return L.subject + " — " + tName(L.teacherId) + (roomOf2(L) ? " — sala " + roomOf2(L) : ""); }
+  var sheets = [];
+  S.classes.forEach(function(c){
+    var rows = [], r = 1;
+    wks.forEach(function(wk){
+      var ls = lessons(wk).filter(function(L){ return L.classIds.indexOf(c.id) >= 0 && S.placement[L.id] != null; });
+      var bySlot = lessonsBySlot(ls, S.placement);
+      if (wk){ rows.push('<row r="' + r + '">' + cStr(1, r, 1, "Tydzień " + wk) + "</row>"); r++; }
+      rows.push('<row r="' + r + '">' + cStr(1, r, 1, "Godzina") + DAYS.map(function(dn, i2){ return cStr(2 + i2, r, 1, dn); }).join("") + "</row>");
+      r++;
+      for (var h = 0; h < NH; h++){
+        var rowXml = '<row r="' + r + '">' + cStr(1, r, 2, (h + 1) + ". " + lt[h] + "-" + endOfLesson(lt[h]));
+        for (var d = 0; d < 5; d++){
+          var s = d * NH + h;
+          var cell = (bySlot[s] || []).filter(function(L){ return L.classIds.indexOf(c.id) >= 0; });
+          rowXml += cell.length ? cStr(2 + d, r, 3, cell.map(cellTxt).join("\n")) : cEmp(2 + d, r, 3);
+        }
+        rows.push(rowXml + "</row>");
+        r++;
+      }
+    });
+    rows.sort(function(a2, b2){ return +(/r="(\d+)"/.exec(a2)[1]) - +(/r="(\d+)"/.exec(b2)[1]); });
+    var sheetXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView showGridLines="0" workbookViewId="0"/></sheetViews>'
+      + '<cols><col min="1" max="1" width="16" customWidth="1"/><col min="2" max="6" width="26" customWidth="1"/></cols>'
+      + "<sheetData>" + rows.join("") + "</sheetData></worksheet>";
+    sheets.push({ name: sheetNameSafe(cName(c.id)), xml: sheetXml });
+  });
+  var rowsN = ['<row r="1">' + cStr(1, 1, 1, "Nauczyciel") + cStr(2, 1, 1, "Dzień") + cStr(3, 1, 1, "Godzina") + cStr(4, 1, 1, "Oddział") + cStr(5, 1, 1, "Zajęcia") + cStr(6, 1, 1, "Sala") + "</row>"];
+  var rr = 2;
+  lessons().forEach(function(L){
+    var s = S.placement[L.id]; if (s == null) return;
+    rowsN.push('<row r="' + rr + '">' + cStr(1, rr, 0, tName(L.teacherId)) + cStr(2, rr, 0, DAYS[Math.floor(s / NH)]) + cStr(3, rr, 0, (s % NH + 1) + ". " + lt[s % NH] + "-" + endOfLesson(lt[s % NH])) + cStr(4, rr, 0, L.classIds.map(cName).join(", ")) + cStr(5, rr, 0, L.subject) + cStr(6, rr, 0, roomOf2(L)) + "</row>");
+    rr++;
+  });
+  var xmlN = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView showGridLines="0" workbookViewId="0"/></sheetViews>'
+    + '<cols><col min="1" max="1" width="26" customWidth="1"/><col min="2" max="6" width="16" customWidth="1"/></cols>'
+    + "<sheetData>" + rowsN.join("") + "</sheetData></worksheet>";
+  sheets.push({ name: "Nauczyciele", xml: xmlN });
+  return xlsxMultiParts(sheets);
+}
+function downloadEdziennik(){
+  if (!S.classes.length){ flash("Najpierw dodaj oddziały w zakładce Dane.", "warn"); return; }
+  var u8 = zipWrite(edziennikXlsxParts());
+  var blob = new Blob([u8], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "e-dziennik-wprowadzanie.xlsx";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 3000);
+  flash("🏫 Zapisano e-dziennik.xlsx — arkusz na każdy oddział w układzie wprowadzania Vulcan UONET+.", "ok");
+}
 
 /* ==================== v6.27: ZASTĘPSTWA + SALDO GODZIN ==================== */
 var zastDay = null; /* v6.27: dzień zastępstw — null = auto wg dzisiejszej daty (pn-pt), w weekend poniedziałek; 0..4 = wybrany */
 var zastAbsent = {}; /* v6.27: nieobecni — teacherId -> true */
+var zastCover = {}; /* v6.59: przykrycia — klucz "slot|nieobecnyId" -> coverTeacherId */
+var zastAbsentClass = {}; /* v6.59: oddziały poza szkołą (wyjazd) — ich lekcje odpadają bez przykrycia, nauczyciele zostają wolni */
+function zastCoverKey(slot, absentId){ return slot + "|" + absentId; }
+function zastCoverClick(slot, absentId, coverId){ /* v6.59: klik kandydata = przypisz przykrycie; klik przydzielonego = zdejmij */
+  var key = zastCoverKey(slot, absentId);
+  if (zastCover[key] === coverId){ delete zastCover[key]; saveZast(); render(); flash("Zdjęto przykrycie — lekcja znowu do przydzielenia.", "ok"); return; }
+  if (absentId === coverId){ flash("⛔ Nauczyciel nieobecny nie może przykryć własnej lekcji.", "err"); return; }
+  var ls = lessons();
+  for (var i = 0; i < ls.length; i++){
+    if (S.placement[ls[i].id] === slot && ls[i].teacherId === coverId){ flash("⛔ " + tName(coverId) + " ma wtedy własną lekcję.", "err"); return; }
+  }
+  for (var k in zastCover){
+    var sl2 = +(k.split("|")[0]);
+    if (sl2 === slot && zastCover[k] === coverId){ flash("⛔ " + tName(coverId) + " przykrywa już wtedy inną lekcję.", "err"); return; }
+  }
+  var ok3 = S.teachers.some(function(t){ return t.id === coverId; });
+  if (!ok3){ flash("⛔ Nie znam takiego nauczyciela.", "err"); return; }
+  zastCover[key] = coverId; saveZast(); render();
+  flash("✅ " + tName(coverId) + " przykryje lekcję (godz. " + ((slot % NH) + 1) + ").", "ok");
+}
 
 function zastDayIdx(){
   if (zastDay != null) return zastDay;
@@ -4223,15 +4426,27 @@ function isVacantName(n){ return /^wakat/i.test(String(n || "").trim()); } /* v6
 function zastData(){ /* v6.27: analiza zastępstw dla dnia — wypadające lekcje nieobecnych + kandydaci przykrycia (bez lekcji na tej godzinie, dostępni wg ⛔, nie wakaty) */
   var di = zastDayIdx();
   var ls = lessons();
-  var busy = {}, dayLen = {}, inDay = [];
+  var busy = {}, dayLen = {}, inDay = [], classLen = {}, classFall = [];
   ls.forEach(function(L){
     var s = S.placement[L.id];
     if (s == null) return;
     if (Math.floor(s / NH) !== di) return;
+    if (L.classIds.some(function(cid){ return zastAbsentClass[cid]; })){ /* v6.59: wyjazd oddziału — lekcja odpada, nauczyciel wolny */
+      classFall.push({ slot: s, h: s % NH, classes: L.classIds.map(cName).join(", "), subject: L.subject, teacherId: L.teacherId, teacherName: tName(L.teacherId) });
+      return;
+    }
     busy[s] = busy[s] || {}; busy[s][L.teacherId] = true;
     dayLen[L.teacherId] = (dayLen[L.teacherId] || 0) + 1;
+    L.classIds.forEach(function(cid){ classLen[cid] = (classLen[cid] || 0) + 1; });
     inDay.push(L);
   });
+  for (var ck in zastCover){ /* v6.59: przydzielone przykrycia blokują kandydatów jak lekcje */
+    var cks = +(ck.split("|")[0]);
+    if (Math.floor(cks / NH) !== di) continue;
+    if (!(cks >= 0) || cks >= NH * 5) continue;
+    if (!S.teachers.some(function(t){ return t.id === zastCover[ck]; })) continue;
+    busy[cks] = busy[cks] || {}; busy[cks][zastCover[ck]] = true;
+  }
   var un = {}; S.teachers.forEach(function(t){ var m = {}; (t.unavail || []).forEach(function(s){ m[s] = true; }); un[t.id] = m; });
   var trU = tripBlock(); for (var tuk in trU.t){ if (!un[tuk]) un[tuk] = {}; for (var suk in trU.t[tuk]) un[tuk][suk] = true; } /* v6.42: kandydat zastepstwa nie moze byc na wyjeździe */
   var absent = {}; S.teachers.forEach(function(t){ if (zastAbsent[t.id] && dayLen[t.id]) absent[t.id] = true; });
@@ -4246,14 +4461,15 @@ function zastData(){ /* v6.27: analiza zastępstw dla dnia — wypadające lekcj
       return true;
     });
     cand.sort(function(a, b){ return (dayLen[a.id] || 0) - (dayLen[b.id] || 0) || tchKeyOf(a).localeCompare(tchKeyOf(b), "pl"); });
-    fall.push({ slot: s, h: s % NH, teacherId: L.teacherId, teacherName: tName(L.teacherId), subject: L.subject, classes: L.classIds.map(cName).join(", "), candidates: cand });
+    var cid2 = zastCover[zastCoverKey(s, L.teacherId)] || null;
+    fall.push({ slot: s, h: s % NH, teacherId: L.teacherId, teacherName: tName(L.teacherId), subject: L.subject, classes: L.classIds.map(cName).join(", "), candidates: cand, coverId: cid2, coverName: cid2 ? tName(cid2) : null });
   });
   fall.sort(function(a, b){ return a.slot - b.slot; });
   var byCand = {};
   fall.forEach(function(f){ f.candidates.forEach(function(t){ if (!byCand[t.id]) byCand[t.id] = { id: t.id, name: t.name, cover: 0 }; byCand[t.id].cover++; }); });
   var candSum = Object.keys(byCand).map(function(k){ return { id: k, name: byCand[k].name, cover: byCand[k].cover, dayLen: dayLen[k] || 0, free: NH - (dayLen[k] || 0) }; });
   candSum.sort(function(a, b){ return b.cover - a.cover || tchKeyOf({ name: a.name }).localeCompare(tchKeyOf({ name: b.name }), "pl"); });
-  return { day: di, fall: fall, candSum: candSum, dayLen: dayLen, unplaced: ls.filter(function(L){ return S.placement[L.id] == null; }).length };
+  return { day: di, fall: fall, candSum: candSum, dayLen: dayLen, classLen: classLen, classFall: classFall, covered: fall.filter(function(f){ return f.coverId; }).length, unplaced: ls.filter(function(L){ return S.placement[L.id] == null; }).length };
 }
 function saldoData(){ /* v6.27: saldo godzin — przydział vs ułożony plan + kontrola Świetlicy + wolne godziny w dniu zastępstw */
   var di = zastDayIdx();
@@ -4395,18 +4611,38 @@ function renderZast(){ /* v6.27: zakładka Zastępstwa — nieobecni, wypadając
     h += '<label class="row" style="cursor:pointer"><input type="checkbox"' + (zastAbsent[t.id] ? " checked" : "") + ' onchange="toggleZastAbsent(\'' + t.id + '\')"><span style="flex:1">' + esc(t.name) + '</span><span class="badge">' + (zd.dayLen[t.id] || 0) + ' lekcji</span></label>';
   });
   h += "</div></div>";
+  h += '<div class="card"><div class="hd"><span>🚌 Oddziały poza szkołą (wyjazd/wycieczka)</span></div><div class="bd">'; /* v6.59 */
+  h += '<p class="hint">Zaznacz oddział, który jest tego dnia poza szkołą — jego lekcje odpadają bez przykrycia, a prowadzący je nauczyciele zostają wolni i mogą przykrywać zastępstwa.</p>';
+  var clsInDay = sortedClasses().filter(function(c){ return (zd.classLen[c.id] || 0) > 0; });
+  if (clsInDay.length){
+    clsInDay.forEach(function(c){
+      h += '<label class="row" style="cursor:pointer"><input type="checkbox"' + (zastAbsentClass[c.id] ? " checked" : "") + ' onchange="toggleZastAbsentClass(\'' + c.id + '\')"><span style="flex:1">' + esc(c.name) + '</span><span class="badge">' + (zd.classLen[c.id] || 0) + " lekcji</span></label>";
+    });
+  } else h += '<p class="hint">W ' + esc(DAYS[di]) + " nie ma ułożonych lekcji oddziałów.</p>";
+  h += "</div></div>";
+  if (zd.classFall.length){
+    h += '<div class="card"><div class="hd"><span>🚌 Wypadające lekcje oddziałów poza szkołą</span><span class="badge">' + zd.classFall.length + '</span></div><div class="bd"><div class="prevtbl"><table><tr><th>Godz.</th><th>Oddział</th><th>Zajęcia</th><th>Zwolniony nauczyciel</th></tr>';
+    zd.classFall.forEach(function(f){
+      h += "<tr><td>" + (f.h + 1) + ". " + esc(lt[f.h]) + "</td><td>" + esc(f.classes) + "</td><td>" + esc(f.subject) + "</td><td>" + esc(f.teacherName) + "</td></tr>";
+    });
+    h += "</table></div></div></div>";
+  }
   h += '<div class="card"><div class="hd"><span>❌ Wypadające lekcje — ' + esc(DAYS[di]) + '</span><span class="badge' + (zd.fall.length ? " err" : " ok") + '">' + zd.fall.length + ' do przykrycia</span></div><div class="bd">';
   if (!zd.fall.length){
     var any = Object.keys(zastAbsent).length > 0;
     h += '<p class="hint">' + (any ? "Zaznaczeni nauczyciele nie mają dziś ułożonych lekcji — nic nie wypada." : "Zaznacz nieobecnych powyżej, aby zobaczyć wypadające lekcje.") + "</p>";
   } else {
-    h += '<div class="prevtbl"><table><tr><th>Lp.</th><th>Godz.</th><th>Klasa</th><th>Zajęcia</th><th>Nieobecny/a</th><th>Kandydaci na zastępstwo (dziś: ile lekcji)</th></tr>';
+    h += '<div class="prevtbl"><table><tr><th>Lp.</th><th>Godz.</th><th>Klasa</th><th>Zajęcia</th><th>Nieobecny/a</th><th>Kandydaci — klik = przydziel (dziś: ile lekcji)</th><th>Przykrywa</th></tr>';
     zd.fall.forEach(function(f, i){
-      var cands = f.candidates.slice(0, 4).map(function(t){ return esc(t.name) + ' <span class="badge">' + (zd.dayLen[t.id] || 0) + '</span>'; }).join("<br>");
-      if (f.candidates.length > 4) cands += "<br>…+" + (f.candidates.length - 4);
-      h += '<tr><td>' + (i + 1) + '</td><td>' + (f.h + 1) + ". " + esc(lt[f.h]) + '</td><td>' + esc(f.classes) + '</td><td>' + esc(f.subject) + '</td><td>' + esc(f.teacherName) + '</td><td>' + (cands || '<span class="badge err">brak wolnych</span>') + "</td></tr>";
+      var cands = f.candidates.slice(0, 4).map(function(t){
+        var cur = f.coverId === t.id;
+        return '<button class="chip' + (cur ? " sel" : "") + '" style="cursor:pointer;display:inline-block;margin:1px 2px" onclick="zastCoverClick(' + f.slot + ',\'' + f.teacherId + '\',\'' + t.id + '\')">' + esc(t.name) + (cur ? " ✓" : "") + ' <span class="badge">' + (zd.dayLen[t.id] || 0) + "</span></button>";
+      }).join("");
+      if (f.candidates.length > 4) cands += '<span class="hint"> +' + (f.candidates.length - 4) + "</span>";
+      h += '<tr><td>' + (i + 1) + '</td><td>' + (f.h + 1) + ". " + esc(lt[f.h]) + '</td><td>' + esc(f.classes) + '</td><td>' + esc(f.subject) + '</td><td>' + esc(f.teacherName) + '</td><td>' + (cands || '<span class="badge err">brak wolnych</span>') + '</td><td>' + (f.coverName ? '<b>' + esc(f.coverName) + "</b>" : "—") + "</td></tr>";
     });
     h += "</table></div>";
+    h += '<p class="hint">Przykryte: <b>' + zd.covered + "/" + zd.fall.length + "</b>. Przydział przykryć zapisuje się w tej przeglądarce na ten dzień — wróci po ponownym otwarciu apki.</p>";
   }
   if (zd.unplaced) h += '<p class="hint">⚠️ W planie jest ' + zd.unplaced + ' nieprzypisanych lekcji — zastępstwa liczone tylko z lekcji ułożonych.</p>';
   h += "</div></div>";
@@ -4434,8 +4670,13 @@ function renderZast(){ /* v6.27: zakładka Zastępstwa — nieobecni, wypadając
   return h;
 }
 function setZastDay(v){ var n = parseInt(v, 10); zastDay = isNaN(n) ? null : n; saveZast(); render(); }
-function toggleZastAbsent(id){ if (zastAbsent[id]) delete zastAbsent[id]; else zastAbsent[id] = true; saveZast(); render(); }
-function zastClear(){ zastAbsent = {}; saveZast(); render(); }
+function toggleZastAbsent(id){ /* v6.59: odznaczenie nieobecności czyści jego przykrycia */
+  if (zastAbsent[id]){ delete zastAbsent[id]; for (var k in zastCover){ if (k.split("|")[1] === id) delete zastCover[k]; } }
+  else zastAbsent[id] = true;
+  saveZast(); render();
+}
+function toggleZastAbsentClass(id){ if (zastAbsentClass[id]) delete zastAbsentClass[id]; else zastAbsentClass[id] = true; saveZast(); render(); }
+function zastClear(){ zastAbsent = {}; zastAbsentClass = {}; zastCover = {}; saveZast(); render(); }
 
 /* ==================== v6.28: trwałe zaznaczenia zastępstw + kartka do druku ==================== */
 var LS_ZAST = "pz-zast"; /* osobny klucz — nie rusza zapisu planu */
@@ -4444,8 +4685,18 @@ function zastTodayStr(){ var d = new Date(); return d.getFullYear() + "-" + ("0"
 function saveZast(){
   var ids = Object.keys(zastAbsent).filter(function(id){ return S.teachers.some(function(t){ return t.id === id; }); });
   zastAbsent = {}; ids.forEach(function(id){ zastAbsent[id] = true; });
+  var clsIds = Object.keys(zastAbsentClass).filter(function(id){ return S.classes.some(function(c){ return c.id === id; }); }); /* v6.59 */
+  zastAbsentClass = {}; clsIds.forEach(function(id){ zastAbsentClass[id] = true; });
+  var cov = []; /* v6.59: przykrycia — slot|nieobecny -> przykrywający */
+  for (var k in zastCover){
+    var pr = k.split("|"); var sl = +pr[0], ab = pr[1];
+    if (!(sl >= 0) || sl >= NH * 5) continue;
+    if (!S.teachers.some(function(t){ return t.id === ab; })) continue;
+    if (!S.teachers.some(function(t){ return t.id === zastCover[k]; })) continue;
+    cov.push({ s: sl, a: ab, c: zastCover[k] });
+  }
   zastSavedAt = zastTodayStr();
-  try{ localStorage.setItem(LS_ZAST, JSON.stringify({ day: zastDay, absent: ids, savedAt: zastSavedAt })); }catch(e){}
+  try{ localStorage.setItem(LS_ZAST, JSON.stringify({ day: zastDay, absent: ids, savedAt: zastSavedAt, cover: cov, absentClasses: clsIds })); }catch(e){}
 }
 function loadZast(){
   var j = null;
@@ -4454,6 +4705,10 @@ function loadZast(){
   zastDay = (j.day === null || (j.day >= 0 && j.day <= 4)) ? (j.day == null ? null : j.day) : null;
   zastAbsent = {};
   (j.absent || []).forEach(function(id){ if (S.teachers.some(function(t){ return t.id === id; })) zastAbsent[id] = true; });
+  zastAbsentClass = {}; /* v6.59 */
+  (j.absentClasses || []).forEach(function(id){ if (S.classes.some(function(c){ return c.id === id; })) zastAbsentClass[id] = true; });
+  zastCover = {};
+  (j.cover || []).forEach(function(c2){ if (typeof c2.s === "number" && c2.a && c2.c && c2.s >= 0 && c2.s < NH * 5) zastCover[zastCoverKey(c2.s, c2.a)] = c2.c; });
   zastSavedAt = j.savedAt || null;
 }
 function zastPrintHtml(){ /* v6.28: kartka zastępstw do druku — A4, puste pole „Zastępuje" do wpisu ręcznego */
@@ -4480,12 +4735,15 @@ function zastPrintHtml(){ /* v6.28: kartka zastępstw do druku — A4, puste pol
   var b = '<div class="title">ZASTĘPSTWA</div>'
     + '<div class="sub">' + esc(DAYS[di]) + ' · Szkoła Podstawowa nr 7 Specjalna w Katowicach · ' + esc(zastTodayStr()) + '</div>'
     + '<div class="abs"><b>Nieobecni:</b> ' + (absList.length ? esc(absList.join(", ")) : "—") + '</div>';
+  var absCls = sortedClasses().filter(function(c){ return zastAbsentClass[c.id]; }).map(function(c){ return c.name; }); /* v6.59 */
+  if (absCls.length) b += '<div class="abs"><b>Oddziały poza szkołą:</b> ' + esc(absCls.join(", ")) + '</div>';
+  if (zd.classFall.length) b += '<div class="abs"><b>Wypadają lekcje oddziałów poza szkołą:</b> ' + esc(zd.classFall.map(function(f){ return f.classes + " — " + f.subject + " (" + (f.h + 1) + ". godz., " + f.teacherName + ")"; }).join(" · ")) + '</div>';
   if (zd.fall.length){
     b += '<table><tr><th style="width:8mm">Lp.</th><th style="width:22mm">Godzina</th><th style="width:20mm">Klasa</th><th>Zajęcia</th><th style="width:32mm">Nieobecny/a</th><th style="width:44mm">Propozycje (lekcji dziś)</th><th style="width:30mm">Zastępuje</th></tr>';
     zd.fall.forEach(function(f, i){
       var cands = f.candidates.slice(0, 3).map(function(t){ return esc(t.name) + " (" + (zd.dayLen[t.id] || 0) + ")"; }).join(", ");
       if (f.candidates.length > 3) cands += " …";
-      b += '<tr><td class="c">' + (i + 1) + '</td><td class="c">' + (f.h + 1) + ". " + esc(lt[f.h]) + "-" + esc(endOfLesson(lt[f.h])) + '</td><td class="c">' + esc(f.classes) + '</td><td>' + esc(f.subject) + '</td><td>' + esc(f.teacherName) + '</td><td><small>' + (cands || "brak wolnych") + '</small></td><td class="z"></td></tr>';
+      b += '<tr><td class="c">' + (i + 1) + '</td><td class="c">' + (f.h + 1) + ". " + esc(lt[f.h]) + "-" + esc(endOfLesson(lt[f.h])) + '</td><td class="c">' + esc(f.classes) + '</td><td>' + esc(f.subject) + '</td><td>' + esc(f.teacherName) + '</td><td><small>' + (cands || "brak wolnych") + '</small></td><td class="z">' + (f.coverName ? "<b>" + esc(f.coverName) + "</b>" : "") + "</td></tr>";
     });
     b += "</table>";
     if (zd.candSum.length){
@@ -4564,6 +4822,7 @@ var firstRun = false;
 try{ if (!localStorage.getItem(LS)) firstRun = true; }catch(e){ firstRun = true; }
 S = loadState();
 loadZast(); /* v6.28: odtwórz zaznaczenia zastępstw z poprzedniej sesji */
+try{ if (localStorage.getItem(LS_TP) === "1") planTranspose = true; }catch(e){} /* v6.59: zapamiętany układ siatki planu */
 draftRestore(); /* v6.46: przywróć wklejkę importu z poprzedniej sesji */
 if (firstRun) save();
 var themeBtnEl = document.getElementById("themeBtn");
