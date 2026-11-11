@@ -164,7 +164,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.57.
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.58.
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -280,6 +280,7 @@ function normalize(p){
   if (!p.dutyPlacement) p.dutyPlacement = {}; /* v6.34: dutyId -> [slot,...] */
   Object.keys(p.dutyPlacement).forEach(function(k){ var arr = p.dutyPlacement[k]; if (typeof arr === "number") arr = [arr]; /* v6.36: migracja pojedynczego slotu z 1. iteracji v6.34 */ if (!Array.isArray(arr)) delete p.dutyPlacement[k]; else p.dutyPlacement[k] = arr.filter(function(sv){ return typeof sv === "number" && isFinite(sv) && sv >= 0 && sv < 5 * NH && Math.floor(sv) === sv; }); });
   if (p.settings.weekAB == null) p.settings.weekAB = false; /* v6.35: rotacja tygodni A/B */
+  if (p.settings.icsFrom == null) p.settings.icsFrom = ""; /* v6.58: poniedziałek startu eksportu iCal (puste = bieżący tydzień; przy A/B definiuje tydzień A) */
   if (!Array.isArray(p.trips)) p.trips = []; /* v6.42: wyjazdy/wycieczki — { id, label, teacherIds, classIds, slots } */
   p.trips.forEach(function(tr){ if (tr.id == null) tr.id = ""; if (tr.label == null) tr.label = ""; if (!Array.isArray(tr.teacherIds)) tr.teacherIds = []; if (!Array.isArray(tr.classIds)) tr.classIds = []; if (!Array.isArray(tr.slots)) tr.slots = []; tr.slots = tr.slots.filter(function(sv){ return typeof sv === "number" && isFinite(sv) && sv >= 0 && sv < 5 * NH && Math.floor(sv) === sv; }); });
   p.teachers.forEach(function(t){ if (t.etat == null) t.etat = 0; /* v6.51: etat w godzinach lekcyjnych (0 = bez kontroli) */ if (!Array.isArray(t.unavail)) t.unavail = []; if (!t.unavailWhy || typeof t.unavailWhy !== "object" || Array.isArray(t.unavailWhy)) t.unavailWhy = {}; var keepWhy = {}; t.unavail.forEach(function(sv){ if (t.unavailWhy[sv] != null) keepWhy[sv] = String(t.unavailWhy[sv]); }); t.unavailWhy = keepWhy; }); /* v6.42: powody blokad nauczyciela — czystka wpisow bez aktywnego slotu */
@@ -312,15 +313,16 @@ function abbr(s){
   var init = raw.filter(function(w){ return skip.indexOf(w.toLowerCase()) < 0; }).map(function(w){ return w[0].toUpperCase(); }).join("");
   return init || raw[0].slice(0,3).toUpperCase();
 }
-function downloadText(name, txt){
-  var blob = new Blob([txt], { type: 'text/plain;charset=utf-8' });
+function downloadFile(name, txt, mime){ /* v6.58: generyczny download — .ics/.html/.txt */
+  var blob = new Blob([txt], { type: mime || 'text/plain;charset=utf-8' });
   var a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = name;
   document.body.appendChild(a);
   a.click();
   setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 3000);
-} /* v6.39 */
+}
+function downloadText(name, txt){ downloadFile(name, txt, 'text/plain;charset=utf-8'); } /* v6.39 */
 function pad(s, n){ s = String(s); return s.length >= n ? s.slice(0, n) : s + " ".repeat(n - s.length); }
 function nextId(items, prefix){
   var max = 0;
@@ -4060,14 +4062,152 @@ function renderEks(){
      + '<button class="btn2" onclick="downloadDocx()">📄 Word (.docx)</button>'
      + '<label class="row" style="cursor:pointer;margin:0"><input type="checkbox"' + (eksDocxInits ? " checked" : "") + ' onchange="setEksDocxInits(this.checked)"><span class="hint" style="margin:0">Word: inicjały nauczycieli</span></label>'
      + "</div>";
+  h += '<div class="row" style="margin-top:8px">' /* v6.58: dystrybucja — iCal + HTML */
+     + '<button class="btn2" onclick="icsDownloadAll(\'teacher\')">📅 iCal — nauczyciele (.ics)</button>'
+     + '<button class="btn2" onclick="icsDownloadAll(\'class\')">📅 iCal — klasy (.ics)</button>'
+     + '<button class="btn2" onclick="downloadPlanHtml()">🌐 HTML — cała szkoła</button>'
+     + '<label class="lbl">📅 iCal od:</label><input type="date" class="inp" style="width:auto" value="' + esc(S.settings.icsFrom || "") + '" onchange="setIcsFrom(this.value)" title="Poniedziałek, od którego iCal zaczyna powtarzać lekcje (przy rotacji A/B: tydzień A). Puste = bieżący tydzień.">'
+     + "</div>";
   h += '<textarea id="eksText" class="inp ta big" readonly>' + esc(eksText()) + "</textarea>";
   h += '<p class="hint">' + (eksMode === "csv" ? "CSV ze średnikami — Excel otworzy w kolumnach (jeśli nie, użyj Dane → Tekst jako kolumny)." : "Tekst o stałej szerokości kolumn — wklejasz do Worda/Excela/maila. Skróty przedmiotów z pierwszych liter.") + "</p>";
   h += '<p class="hint">🖼️ Plansze A3/A2: otwierają się w nowej karcie — po jednym wielkim planie na oddział, do wydruku na korytarz (duże litery, pełne nazwiska). Najlepiej drukować z komputera.</p>';
   h += '<p class="hint">📄 Word (.docx): pobiera plik z planami wg widoku powyżej (klasy albo nauczyciele; przy CSV — plany klas). Otworzysz i zedytujesz go w Wordzie; PDF zrobisz z plansz A3/A2 (drukuj → zapisz jako PDF). Przełącznik „Word: inicjały” — w planach klas skróty nauczycieli jak w Zbiorczej zamiast pełnych nazwisk.</p>';
   h += '<p class="hint">🗓️ Zbiorcza (tydzień): jedna plansza dla całej szkoły — godziny w wierszach, oddziały w kolumnach, dni w pasach; w komórce skrót przedmiotu i inicjały nauczyciela (przy dublu krótkie rozróżnienie, maks. 4 znaki). Najlepiej drukować z komputera.</p>';
   h += '<p class="hint">📊 A1 — Excel i 🖼️ A1 — wydruk (v6.20): plansza w konwencji szkolnego szablonu A1 — kolumny oddziałów (szkolne kody: 1a, 2aA, 5z…), Świetlica i kolumny nauczycieli (nagłówki: inicjały nauczyciela jak w Zbiorczej; w komórce kod klasy, którą wtedy prowadzą), godziny wierszami. Excel: plik .xlsx do dalszej edycji; wydruk: A1 poziomo. Ułożony plan wypełnia wszystko automatycznie.</p>';
+  h += '<p class="hint">📅 iCal (v6.58): każdy nauczyciel i oddział dostaje własny plik .ics — wpięcie w Google: calendar.google.com → koło zębate Ustawienia → Importuj i eksportuj; w telefonie wystarczy otworzyć plik. Lekcje powtarzają się co tydzień (rotacja A/B: co drugi) do 30 czerwca roku szkolnego; dni wolne z zakładki ⛔ są pomijane. Pole „iCal od” ustawia poniedziałek startu (przy A/B: tydzień A). Przeglądarka może zapytać o zgodę na pobranie wielu plików naraz — zgódź się.</p>';
+  h += '<p class="hint">🌐 HTML (v6.58): jeden samowystarczalny plik plan-szkoly.html z planami wszystkich oddziałów i nauczycieli (spis treści u góry) — do wysłania mailem, wrzucenia na stronę szkoły albo wydruku; otwiera się bez internetu i bez aplikacji.</p>';
   h += "</div></div>";
   return h;
+}
+
+/* ==================== v6.58: DYSTRYBUCJA — iCal (.ics) + HTML ==================== */
+function icsEsc(s){ return String(s == null ? "" : s).replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n"); } /* v6.58: tekst wartości wg RFC 5545 */
+function icsBytes(s){ var n = 0; for (var i = 0; i < s.length; i++){ var c = s.charCodeAt(i); if (c < 0x80) n += 1; else if (c < 0x800) n += 2; else if (c >= 0xD800 && c <= 0xDBFF){ n += 4; i++; } else n += 3; } return n; } /* v6.58: długość w bajtach UTF-8 (RFC 5545 liczy oktety) */
+function icsFold(line){ /* v6.58: składanie linii — max 75 oktetów, kontynuacja z wiodącą spacją */
+  if (icsBytes(line) <= 75) return line;
+  var out = [], cur = "", curB = 0;
+  for (var i = 0; i < line.length; i++){
+    var c = line[i], cb = icsBytes(c);
+    if (curB + cb > (out.length ? 74 : 75)){ out.push(cur); cur = " " + c; curB = 1 + cb; }
+    else { cur += c; curB += cb; }
+  }
+  if (cur) out.push(cur);
+  return out.join("\r\n");
+}
+function icsStamp(dt, hhmm){ /* v6.58: floating local time YYYYMMDDTHHMMSS (hhmm = "H:MM") */
+  var y = dt.getFullYear(), mo = String(dt.getMonth() + 1).padStart(2, "0"), dd = String(dt.getDate()).padStart(2, "0");
+  var m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || "").trim());
+  return y + mo + dd + "T" + (m ? String(+m[1]).padStart(2, "0") + m[2] : "000000") + "00";
+}
+function icsFromMonday(){ /* v6.58: poniedziałek startu eksportu — settings.icsFrom albo bieżący tydzień */
+  return mondayOf(parseIso(S.settings.icsFrom) || new Date());
+}
+function icsUntil(){ /* v6.58: koniec roku szkolnego = 30 czerwca; eksport latem celuje w miniony rok — ustaw wtedy datę z nowego roku szkolnego */
+  var anchor = icsFromMonday(), y = anchor.getFullYear();
+  return new Date(anchor.getMonth() >= 8 ? y + 1 : y, 5, 30);
+}
+function icsFileName(kind, id){ /* v6.58: nazwa pliku .ics z nazwy nauczyciela/oddziału */
+  var nm = String(kind === "class" ? cName(id) : tName(id)).replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "");
+  return "plan-" + (kind === "class" ? "klasa-" : "nauczyciel-") + (nm || String(id)) + ".ics";
+}
+function icsCal(kind, id){ /* v6.58: kalendarz .ics nauczyciela albo oddziału — lekcje co tydzień do 30.06, EXDATE dni wolnych, rotacja A/B jako INTERVAL=2 */
+  var ls = lessons().filter(function(L){ return S.placement[L.id] != null && (kind === "class" ? L.classIds.indexOf(id) >= 0 : L.teacherId === id); });
+  ls.sort(function(a, b){ return S.placement[a.id] - S.placement[b.id]; });
+  var lt = lessonTimes(), start = icsFromMonday(), until = icsUntil();
+  var n2 = new Date();
+  var dtstamp = n2.getUTCFullYear() + String(n2.getUTCMonth() + 1).padStart(2, "0") + String(n2.getUTCDate()).padStart(2, "0") + "T" + String(n2.getUTCHours()).padStart(2, "0") + String(n2.getUTCMinutes()).padStart(2, "0") + "00Z";
+  var hols = (S.settings.holidays || []).slice().sort();
+  var lines = [ "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//plan-zajec-sps7//Plan Zajec//PL", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
+    "X-WR-CALNAME:" + icsEsc(kind === "class" ? ("Plan — klasa " + cName(id)) : ("Plan — " + tName(id))),
+    "X-WR-TIMEZONE:Europe/Warsaw" ];
+  ls.forEach(function(L){
+    var s = S.placement[L.id], d = Math.floor(s / NH), h = s % NH;
+    var hhmm = lt[h] || "8:00";
+    var ab = S.settings.weekAB && (L.week === "A" || L.week === "B");
+    var first = addDays(start, d + (ab && L.week === "B" ? 7 : 0)); /* lekcja tygodnia B startuje tydzień później */
+    var ev = [ "BEGIN:VEVENT", "UID:" + L.id + "-" + s + "@plan-zajec-sps7", "DTSTAMP:" + dtstamp,
+      "DTSTART:" + icsStamp(first, hhmm), "DTEND:" + icsStamp(first, endOfLesson(hhmm)),
+      "RRULE:FREQ=WEEKLY" + (ab ? ";INTERVAL=2" : "") + ";UNTIL=" + icsStamp(until, "23:59") ];
+    var exd = [];
+    hols.forEach(function(iso){ var hd = parseIso(iso); if (!hd || hd < first || hd > until || (hd.getDay() + 6) % 7 !== d) return; exd.push(icsStamp(hd, hhmm)); });
+    if (exd.length) ev.push("EXDATE:" + exd.join(","));
+    ev.push("SUMMARY:" + icsEsc(L.subject + (kind === "class" ? " (" + tShort(L.teacherId) + ")" : " " + L.classIds.map(cName).join("+"))));
+    var rmv = roomName(effRoomId(L)); if (rmv && rmv !== "?") ev.push("LOCATION:" + icsEsc(rmv)); /* v6.58: sala tylko gdy znana */
+    ev.push("DESCRIPTION:" + icsEsc((kind === "class" ? ("Nauczyciel: " + tName(L.teacherId)) : ("Oddział: " + L.classIds.map(cName).join(", "))) + (S.settings.weekAB && L.week ? " · tydzień " + L.week : "") + " · Plan Zajęć SPS 7"));
+    ev.push("END:VEVENT");
+    lines = lines.concat(ev);
+  });
+  lines.push("END:VCALENDAR");
+  return lines.map(icsFold).join("\r\n") + "\r\n";
+}
+function icsDownload(kind, id){ /* v6.58: pobiera jeden plik .ics */
+  downloadFile(icsFileName(kind, id), icsCal(kind, id), "text/calendar;charset=utf-8");
+}
+function icsDownloadAll(kind){ /* v6.58: seria plików .ics — po jednym na osobę/oddział z lekcjami; przeglądarka pyta o zgodę na serię pobierań */
+  var list = (kind === "class" ? S.classes : S.teachers).map(function(x){ return x.id; });
+  var withL = list.filter(function(id){ return icsCal(kind, id).indexOf("BEGIN:VEVENT") >= 0; });
+  withL.forEach(function(id, ix){ setTimeout(function(){ icsDownload(kind, id); }, ix * 400); });
+  flash(withL.length ? ("Pobieram " + withL.length + " plików .ics (po jednym co 0,4 s).") : "Brak ułożonych lekcji — najpierw ułóż plan w zakładce 🗓️.", withL.length ? "ok" : "warn");
+}
+function setIcsFrom(v){ /* v6.58: poniedziałek startu eksportu iCal (przy rotacji A/B: tydzień A) */
+  S.settings.icsFrom = v || ""; save(); render();
+  flash("iCal od poniedziałku " + isoDate(icsFromMonday()) + (S.settings.weekAB ? " (tydzień A)." : "."), "ok");
+}
+function planHtmlGrid(title, ls, kind, id, wk){ /* v6.58: siatka planu (dni w kolumnach, godziny w wierszach) do pliku HTML */
+  var bySlot = lessonsBySlot(ls, S.placement), lt = lessonTimes();
+  var h = '<div class="grid-wrap"><div class="grid-title">' + esc(title) + (wk ? ' <span class="wk">tydzień ' + esc(wk) + "</span>" : "") + "</div>";
+  h += "<table><tr><th class=\"hr\">Godz.</th>";
+  for (var d = 0; d < 5; d++) h += "<th>" + DAYS[d] + "</th>";
+  h += "</tr>";
+  for (var h2 = 0; h2 < NH; h2++){
+    h += '<tr><th class="hr">' + esc(lt[h2] + "–" + endOfLesson(lt[h2])) + "</th>";
+    for (var d2 = 0; d2 < 5; d2++){
+      var s = d2 * NH + h2, cell = (bySlot[s] || []).filter(function(L){ return kind === "class" ? L.classIds.indexOf(id) >= 0 : L.teacherId === id; });
+      if (!cell.length){ h += '<td class="empty">·</td>'; continue; }
+      h += "<td>" + cell.map(function(L){
+        var who = kind === "class" ? tShort(L.teacherId) : L.classIds.filter(function(c){ return c; }).map(function(c){ return abbr(cName(c)); }).join("+"); /* v6.58: zajęcia bez oddziału bez pustego "?" */
+        var rm = roomName(effRoomId(L));
+        return '<div class="lek"><b>' + esc(abbr(L.subject)) + "</b> " + esc(who) + (rm && rm !== "?" ? ' <i>' + esc(rm) + "</i>" : "") + "</div>";
+      }).join("") + "</td>";
+    }
+    h += "</tr>";
+  }
+  return h + "</table></div>";
+}
+function planHtmlDoc(){ /* v6.58: samowystarczalny plik HTML z planami wszystkich oddziałów i nauczycieli — do dystrybucji mailem/na stronę szkoły */
+  var ab = S.settings.weekAB, d = new Date(), stan = d.getDate() + "." + (d.getMonth() + 1) + "." + d.getFullYear();
+  var all = lessons(), unp = all.filter(function(L){ return S.placement[L.id] == null; }).length;
+  var css = "<style>"
+    + "*{box-sizing:border-box;margin:0;padding:0} body{font-family:Arial,'Segoe UI',sans-serif;background:#f2f4f7;color:#1e293b;padding:16px}"
+    + "header{background:linear-gradient(90deg,#d97706,#ea580c);color:#fff;padding:14px 18px;border-radius:10px}"
+    + "h1{font-size:22px} .sub{font-size:12px;opacity:.9;margin-top:4px}"
+    + "nav{margin:14px 0;display:flex;flex-wrap:wrap;gap:6px} nav a{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:4px 10px;font-size:12px;color:#b45309;text-decoration:none}"
+    + "h2{font-size:15px;margin:18px 0 8px;border-bottom:2px solid #d97706;padding-bottom:3px}"
+    + ".grid-wrap{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px;margin-bottom:14px;break-inside:avoid}"
+    + ".grid-title{font-weight:bold;font-size:15px;margin-bottom:6px} .grid-title .wk{color:#b45309;font-size:12px;font-weight:normal}"
+    + "table{width:100%;border-collapse:collapse} th,td{border:1px solid #cbd5e1;font-size:11.5px;padding:3px 4px;text-align:center;vertical-align:middle}"
+    + "th{background:#ffedd5;font-size:11px} th.hr{width:64px;white-space:nowrap} td.empty{color:#cbd5e1} td{height:30px}"
+    + ".lek b{font-size:11.5px} .lek{line-height:1.25} .lek i{color:#64748b;font-style:normal;font-size:10.5px}"
+    + "footer{margin:18px 0;color:#64748b;font-size:11px}"
+    + "@media print{body{background:#fff;padding:0} nav{display:none} .grid-wrap{border:0}}"
+    + "</style>";
+  var body = '<header><h1>Plan zajęć — rok szkolny ' + esc(schoolYearOf(d)) + '</h1><div class="sub">stan na ' + stan + (ab ? " · rotacja tygodni A/B" : "") + " · wygenerowano w aplikacji Plan Zajęć</div></header>";
+  body += "<nav>" + S.classes.map(function(c){ return '<a href="#k-' + esc(c.id) + '">' + esc(c.name) + "</a>"; }).join("")
+    + S.teachers.map(function(t){ return '<a href="#t-' + esc(t.id) + '">' + esc(t.name) + "</a>"; }).join("") + "</nav>";
+  var wks = ab ? ["A", "B"] : [""];
+  S.classes.forEach(function(c){
+    body += '<h2 id="k-' + esc(c.id) + '">Oddział ' + esc(c.name) + "</h2>";
+    wks.forEach(function(wk){ body += planHtmlGrid("Oddział " + c.name, lessons(wk), "class", c.id, ab ? wk : ""); });
+  });
+  S.teachers.forEach(function(t){
+    body += '<h2 id="t-' + esc(t.id) + '">' + esc(t.name) + "</h2>";
+    wks.forEach(function(wk){ body += planHtmlGrid(t.name, lessons(wk), "teacher", t.id, ab ? wk : ""); });
+  });
+  body += "<footer>Plan wygenerowany aplikacją Plan Zajęć. " + (unp > 0 ? unp + " lekcji nie ma jeszcze przydzielonej godziny. " : "") + "Godzina rewalidacyjna: " + rewDur() + " min, start " + rewLead() + " min przed dzwonkiem.</footer>";
+  return '<!doctype html>\n<html lang="pl">\n<head>\n<meta charset="UTF-8">\n<meta name="viewport" content="width=device-width, initial-scale=1.0">\n<title>Plan zajęć ' + esc(schoolYearOf(d)) + "</title>\n" + css + "\n</head>\n<body>\n" + body + "\n</body>\n</html>";
+}
+function downloadPlanHtml(){ /* v6.58: pobiera plan-szkoly.html */
+  downloadFile("plan-szkoly.html", planHtmlDoc(), "text/html;charset=utf-8");
 }
 
 /* ==================== v6.27: ZASTĘPSTWA + SALDO GODZIN ==================== */
