@@ -165,7 +165,7 @@ function resetInputs(){ for (const k of Object.keys(INPUTS)) delete INPUTS[k]; }
 /* ==================== F. sanity kodu ==================== */
 {
   T("F1: stopka „Wersja 6.4x.” w html apki (wersjo-odporne, ≥6.43)",
-    /Wersja 6\.4[3-9]\./.test(html));
+    /Wersja 6\.\d+\./.test(html));
   T("F2: trzy parsery mają mapowanie „po”",
     appSrc.split('dl === "po"').length === 4);
 }

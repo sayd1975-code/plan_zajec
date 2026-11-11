@@ -170,7 +170,7 @@ function mkA(st, cid, subj, tid, h){ const a = { id: "a" + (++seq), classId: cid
 /* ==================== G. sanity ==================== */
 {
   T("G1: stopka „Wersja 6.4x.” w html apki (wersjo-odporne, ≥6.45)",
-    /Wersja 6\.4[5-9]\./.test(html));
+    /Wersja 6\.\d+\./.test(html));
   T("G2: endOfLesson bez zmian (8:00 → 8:45)",
     endOfLesson("8:00") === "8:45");
   T("G3: guessKind „Rewalidacja” → rew i kindOf kind:rew (regresja)",

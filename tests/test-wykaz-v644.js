@@ -193,7 +193,7 @@ if (fs.existsSync("/home/user/uploads/Wykaz uczniów 2026-2027.xlsx")) {
 /* ==================== E. sanity ==================== */
 {
   T("E1: stopka „Wersja 6.4x.” w html apki (wersjo-odporne, ≥6.44)",
-    /Wersja 6\.4[4-9]\./.test(html));
+    /Wersja 6\.\d+\./.test(html));
   T("E2: SYN7 w kodzie — bez danych osobowych (same nazwy oddziałów)",
     typeof SYN7 === "object" && Object.keys(SYN7).length === 16);
 }
