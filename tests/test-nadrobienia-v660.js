@@ -238,11 +238,11 @@ SEC("7. UI — renderEks/renderZast");
 
 /* ==================== 8. wersja + service worker ==================== */
 SEC("8. wersja 6.60 + SW");
-T("stopka: Wersja 6.60", raw.indexOf("Wersja 6.60.") > 0);
-T("stopka: brak starej 6.59", raw.indexOf("Wersja 6.59.") < 0);
+T("stopka: Wersja 6.61", raw.indexOf("Wersja 6.61.") > 0);
+T("stopka: brak starej 6.60", raw.indexOf("Wersja 6.60.") < 0);
 if (fs.existsSync("sw.js")){
   const sw = fs.readFileSync("sw.js", "utf8");
-  T("sw.js: CACHE_NAME plan-zajec-v6.60", sw.indexOf('plan-zajec-v6.60') > 0 && sw.indexOf("v6.59") < 0);
+  T("sw.js: CACHE_NAME plan-zajec-v6.61", sw.indexOf('plan-zajec-v6.61') > 0 && sw.indexOf("v6.60") < 0);
 } else {
   console.log("  (sw.js poza katalogiem roboczym — pominięto)");
 }

@@ -50,14 +50,14 @@ function setupView(st, mode, selId){ S = st; viewMode = mode; viewSel = selId; s
   const h = setupView(st, "class", c1.id);
   T("A1: chip zajęć 1:1 w widoku oddziału ma „👤 Rewalidacja”",
     h.indexOf("\u{1F464} Rewalidacja") >= 0);
-  T("A2: podpis chipu 1:1 = „Jan Kowalski • Kow” (imię ucznia • skrót nauczyciela)",
-    h.indexOf("Jan Kowalski • Kow") >= 0);
+  T("A2: podpis chipu 1:1 = „Jan Kowalski • MK” (imię ucznia • skrót nauczyciela)",
+    h.indexOf("Jan Kowalski • MK") >= 0);
   T("A3: dymek (title) chipu 1:1 zawiera „Rewalidacja — Jan Kowalski”",
     h.indexOf("Rewalidacja — Jan Kowalski") >= 0);
   T("A4: zwykłe zajęcia klasowe BEZ znaczka 👤",
     h.indexOf("\u{1F464} Matematyka") < 0);
   T("A5: podpis zwykłych zajęć = sam skrót nauczyciela („ • ” tylko przy 1:1)",
-    />Kow<\/span>/.test(h));
+    />MK<\/span>/.test(h));
   T("A6: imię ucznia pojawia się w widoku dokładnie raz (sub) + raz w title = 2 wystąpienia",
     h.split("Jan Kowalski").length === 3);
   /* 1:1 ucznia innej klasy nie widać w widoku 1a */
@@ -86,7 +86,7 @@ function setupView(st, mode, selId){ S = st; viewMode = mode; viewSel = selId; s
   T("B2: escapowane imię widoczne w podpisie",
     h.indexOf("Ala &lt;b&gt;Widget&lt;/b&gt; • ") >= 0);
   T("B3: studentId wskazujący na usuniętego ucznia → fallback „?” w podpisie",
-    /\? • Zie<\/span>/.test(h));
+    /\? • PZ<\/span>/.test(h));
 }
 
 /* ==================== C. widok nauczyciela: bez znaczka ==================== */
@@ -123,7 +123,7 @@ function setupView(st, mode, selId){ S = st; viewMode = mode; viewSel = selId; s
   st2.activities.push({ id: "a1", classId: c2.id, teacherId: t2.id, subject: "Rewalidacja", hours: 1, kind: "rew", group: "", link: "", studentId: c2.students[0].id, week: "" });
   const hu = setupView(st2, "class", c2.id);
   T("D2: button „Nieprzypisane” zajęć 1:1 nadal ma 👤 + imię + skrót (v6.33 — bez regresji)",
-    hu.indexOf("\u{1F464}Jan Kowalski") >= 0 && hu.indexOf("Kow") >= 0);
+    hu.indexOf("\u{1F464}Jan Kowalski") >= 0 && hu.indexOf("MK") >= 0);
 }
 
 /* ==================== E. tydzień A/B ==================== */
@@ -141,7 +141,7 @@ function setupView(st, mode, selId){ S = st; viewMode = mode; viewSel = selId; s
   S = st; viewMode = "class"; viewSel = c1.id; planWeek = "B";
   const hB = renderPlan();
   T("E2: w tygodniu B zajęcia 1:1 widoczne ze znaczkiem i imieniem",
-    hB.indexOf("\u{1F464} Rewalidacja") >= 0 && hB.indexOf("Jan Kowalski • Kow") >= 0);
+    hB.indexOf("\u{1F464} Rewalidacja") >= 0 && hB.indexOf("Jan Kowalski • MK") >= 0);
 }
 
 /* ==================== F. hint i drobiazgi ==================== */
