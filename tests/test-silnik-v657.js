@@ -265,7 +265,7 @@ SEC("8. UI: checkbox „N” i jeden selektor tygodnia A/B");
   T("UI: podwójny selektor tygodnia usunięty (v6.56 bug)", html.indexOf("h += wkSel + '<select") < 0);
   T("UI: selektor tygodnia renderowany raz", html.indexOf("h += wkSel;") >= 0);
   T("UI: hint o bloku nauczyciela pod listą zajęć", html.indexOf("N = blok nauczyciela") >= 0);
-  T("stopka „Wersja 6.57.” w html apki", html.indexOf("Wersja 6.57.") >= 0);
+  T("stopka „Wersja 6.5x.” w html apki (wersjo-odporne)", /Wersja 6\.\d+\./.test(html));
 }
 
 /* ==================== 9. regresja: zwykłe klasy nadal bez okienek ==================== */
