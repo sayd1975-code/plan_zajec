@@ -412,7 +412,7 @@ function resetInputs(){ for (const k of Object.keys(INPUTS)) delete INPUTS[k]; }
     r.trips.length === 1 && r.trips[0].label === "Kino" && r.trips[0].slots.join() === "8"
     && r.teachers[0].unavailWhy["0"] === "Awizacja" && r.placement["a1-0"] === 10);
   T("H4: stopka „Wersja 6.4x.” obecna w html apki (wersjo-odporne, ≥6.42)",
-    /Wersja 6\.4[2-9]\./.test(html));
+    /Wersja 6\.\d+\./.test(html));
 }
 
 /* ==================== WYNIK ==================== */

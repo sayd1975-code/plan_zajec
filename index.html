@@ -164,7 +164,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.56.
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.57.
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -274,7 +274,7 @@ function normalize(p){
   p.rooms.forEach(function(r){ if (r.id == null) r.id = ""; if (r.name == null) r.name = ""; if (r.cap == null) r.cap = 1; }); /* v6.39: pojemność sali = ile różnych grup klas może mieć zajęcia naraz */
   p.classes.forEach(function(c){ if (c.norm == null) c.norm = 0; /* v6.51: oczekiwana liczba godzin tygodniowo (0 = bez kontroli) */
   if (c.rew == null) c.rew = rewFromName(c.name); if (!Array.isArray(c.blocked)) c.blocked = []; if (c.roomId == null) c.roomId = ""; if (!Array.isArray(c.students)) c.students = []; }); /* v6.33: uczniowie w oddziale */
-  p.activities.forEach(function(a){ if (a.group == null) a.group = ""; if (a.withClassId == null) a.withClassId = ""; if (a.link == null) a.link = ""; if (a.roomId == null) a.roomId = ""; if (a.studentId == null) a.studentId = ""; if (a.week == null) a.week = ""; }); /* v6.35: tydzień A/B (puste = oba) */ /* v6.33: zajęcia 1:1 do ucznia */
+  p.activities.forEach(function(a){ if (a.group == null) a.group = ""; if (a.withClassId == null) a.withClassId = ""; if (a.link == null) a.link = ""; if (a.roomId == null) a.roomId = ""; if (a.studentId == null) a.studentId = ""; if (a.week == null) a.week = ""; if (a.tblock == null) a.tblock = false; }); /* v6.57: blok nauczyciela (zajęcia bez oddziału) */ /* v6.35: tydzień A/B (puste = oba) */ /* v6.33: zajęcia 1:1 do ucznia */
   if (!Array.isArray(p.duties)) p.duties = []; /* v6.34: dyżury — { id, name, slotsPerWeek } */
   p.duties.forEach(function(d){ if (d.id == null) d.id = ""; if (d.name == null) d.name = ""; if (d.slotsPerWeek == null) d.slotsPerWeek = 1; });
   if (!p.dutyPlacement) p.dutyPlacement = {}; /* v6.34: dutyId -> [slot,...] */
@@ -350,7 +350,7 @@ function classClash(lk, ok, lg, og){
 }
 function buildLessons(acts){
   var out = [];
-  for (var a of acts){ for (var i = 0; i < a.hours; i++) out.push({ id: a.id + "-" + i, activityId: a.id, classId: a.classId, classIds: [a.classId].concat(a.withClassId ? [a.withClassId] : []), teacherId: a.teacherId, subject: a.subject, kind: kindOf(a), group: a.group || "", link: a.link || "", roomId: a.roomId || "", studentId: a.studentId || "", week: a.week || "" }); }
+  for (var a of acts){ for (var i = 0; i < a.hours; i++) out.push({ id: a.id + "-" + i, activityId: a.id, classId: a.classId, classIds: [a.classId].concat(a.withClassId ? [a.withClassId] : []), teacherId: a.teacherId, subject: a.subject, kind: kindOf(a), group: a.group || "", link: a.link || "", roomId: a.roomId || "", studentId: a.studentId || "", week: a.week || "", tblock: a.tblock ? true : "" } /* v6.57 */); }
   return out;
 }
 function lessons(wk){ return buildLessons(S.activities.filter(function(a){ return weekMatch({ week: a.week }, wk); })); } /* v6.35: opcjonalny tydzień A/B */
@@ -535,7 +535,7 @@ function softPenalty(ls, teachers, classes, settings, placement){
   /* v6.23: klasy bez okienek — najtwardsza reguła: limit 0 zawsze, kara za KAŻDE okienko (wagi konfigurowalne) */
   {
     var cdays = {};
-    ls.forEach(function(L){ var s = placement[L.id]; if (s == null) return;
+    ls.forEach(function(L){ var s = placement[L.id]; if (s == null || L.tblock) return; /* v6.57: blok nauczyciela nie liczy się do okienek klasy */
       L.classIds.forEach(function(cid){
         var dd2 = cdays[cid] = cdays[cid] || [[],[],[],[],[]], dh2 = Math.floor(s / NH), hh3 = s % NH;
         if (dd2[dh2].indexOf(hh3) < 0) dd2[dh2].push(hh3);
@@ -554,7 +554,7 @@ function softPenalty(ls, teachers, classes, settings, placement){
   var softR = rulesOn(settings).filter(function(r){ return !r.hard; });
   if (softR.length){
     var bsR = {}, csR = {}, sloc = {};
-    ls.forEach(function(L){ var sr = placement[L.id]; if (sr == null) return;
+    ls.forEach(function(L){ var sr = placement[L.id]; if (sr == null || L.tblock) return; /* v6.57 */
       L.classIds.forEach(function(cid){ (bsR[cid + "|" + sr] = bsR[cid + "|" + sr] || []).push(L); });
       var kr = L.classIds[0] + "|" + Math.floor(sr / NH) + "|" + L.subject; csR[kr] = (csR[kr] || 0) + 1;
       (sloc[L.classIds[0] + "|" + L.subject + "|" + (L.group || "")] = sloc[L.classIds[0] + "|" + L.subject + "|" + (L.group || "")] || []).push(sr); });
@@ -565,6 +565,7 @@ function softPenalty(ls, teachers, classes, settings, placement){
       for (var q1 = 0; q1 < softR.length; q1++){
         var r1 = softR[q1];
         if (!ruleMatch(r1, L)) continue;
+        if (L.tblock && ("" + r1.type).indexOf("tch") !== 0) continue; /* v6.57: blok nauczyciela — tylko reguły nauczyciela */
         if (r1.type === "subjHours" && (hr < (r1.a || 1) - 1 || hr > (r1.b || NH) - 1)){
           pen += (+r1.weight || 100); seenR[r1.id + "|" + L.id] = 1;
         } else if (r1.type === "subjNotLast" && hr >= lastHourOf(settings, dr)){
@@ -622,7 +623,7 @@ function softPenalty(ls, teachers, classes, settings, placement){
     softR.filter(function(r7b){ return r7b.type === "subjBlock"; }).forEach(function(r7b){
       var bnB = Math.max(2, Math.min(4, r7b.n || 2));
       var byCG = {};
-      ls.forEach(function(L){ if (!ruleMatch(r7b, L)) return;
+      ls.forEach(function(L){ if (L.tblock || !ruleMatch(r7b, L)) return; /* v6.57 */
         var kk = L.classIds[0] + "|" + (L.group || "") + "|" + L.subject; (byCG[kk] = byCG[kk] || []).push(L); });
       for (var kk2 in byCG){
         var slots = byCG[kk2].map(function(L){ return placement[L.id]; }).filter(function(sv4){ return sv4 != null; }).sort(function(a2, b2){ return a2 - b2; });
@@ -676,9 +677,9 @@ function softPenalty(ls, teachers, classes, settings, placement){
   if (rewMid) det.push("Rewalidacja: " + rewMid + " godz. na lekcjach 3-6 (zwyczajowo przed 1.-2. albo 7.-8. lekcją)");
   if (settings.autBlocks){
     var cnt = {};
-    ls.forEach(function(L){ var c0 = L.classIds[0]; if (/aut/i.test(names[c0] || "")) { cnt[c0] = cnt[c0] || {}; cnt[c0][L.teacherId] = (cnt[c0][L.teacherId] || 0) + 1; } });
+    ls.forEach(function(L){ var c0 = L.classIds[0]; if (!L.tblock && /aut/i.test(names[c0] || "")) { cnt[c0] = cnt[c0] || {}; cnt[c0][L.teacherId] = (cnt[c0][L.teacherId] || 0) + 1; } }); /* v6.57: tblock poza blokami aut */
     var per = {};
-    ls.forEach(function(L){ var s = placement[L.id]; if (s == null) return;
+    ls.forEach(function(L){ var s = placement[L.id]; if (s == null || L.tblock) return; /* v6.57 */
       var k = L.classIds[0] + "|" + Math.floor(s / NH) + "|" + L.teacherId; (per[k] = per[k] || []).push(s % NH); });
     for (var ck in cnt){
       var bt = null, bc = 0; for (var t in cnt[ck]) if (cnt[ck][t] > bc){ bc = cnt[ck][t]; bt = t; }
@@ -730,7 +731,7 @@ function repairSoft(ls, teachers, classes, settings, placement){
     var kSD = L.classIds[0] + "|" + Math.floor(s / NH) + "|" + L.subject;
     cntSD[kSD] = (cntSD[kSD] || 0) + 1;
     (slotSD[L.classIds[0] + "|" + L.subject + "|" + (L.group || "")] = slotSD[L.classIds[0] + "|" + L.subject + "|" + (L.group || "")] || []).push(s);
-    L.classIds.forEach(function(cid){
+    if (!L.tblock) L.classIds.forEach(function(cid){ /* v6.57: blok nauczyciela nie obciąża klasy */
       var m = busyC[cid] = busyC[cid] || {};
       var fresh = !m[s] || m[s].length === 0;
       m[s] = m[s] || []; m[s].push(L);
@@ -739,14 +740,16 @@ function repairSoft(ls, teachers, classes, settings, placement){
     arr(loadT, L.teacherId)[Math.floor(s / NH)]++; });
   function freeFor(L, s){
     var d = Math.floor(s / NH), h = s % NH;
+    var tb = !!L.tblock; /* v6.57: blok nauczyciela — bez ograniczeń klasowych */
     if (slotBlocked(settings, s)) return false;
     if (L.teacherId && unavail[L.teacherId] && unavail[L.teacherId][s]) return false;
     if (L.teacherId && busyT[L.teacherId] && busyT[L.teacherId][s]) return false;
-    for (var cb2 = 0; cb2 < L.classIds.length; cb2++) if (clsBlock[L.classIds[cb2]][s]) return false;
+    if (!tb) for (var cb2 = 0; cb2 < L.classIds.length; cb2++) if (clsBlock[L.classIds[cb2]][s]) return false; /* v6.57 */
     var sOldR = placement[L.id]; /* musi być POZA pętlą reguł — gdy brak reguł, nadal znamy stary slot */
     for (var rf = 0; rf < hardR.length; rf++){
       var rr2 = hardR[rf];
       if (!ruleMatch(rr2, L)) continue;
+      if (tb && ("" + rr2.type).indexOf("tch") !== 0) continue; /* v6.57: tblock — tylko reguły nauczyciela */
       if (!ruleSlotOk(rr2, L, s, settings, function(d2){
         var cR = cntSD[L.classIds[0] + "|" + d2 + "|" + L.subject] || 0;
         if (sOldR != null && Math.floor(sOldR / NH) === d2) cR--;
@@ -766,7 +769,7 @@ function repairSoft(ls, teachers, classes, settings, placement){
       })) return false;
     }
     var gdR2 = 0; /* v6.23: klasy bez okienek — najtwardsza reguła (limit 0, sprawdzany zawsze) */
-    for (var cgR = 0; cgR < L.classIds.length; cgR++){
+    if (!tb) for (var cgR = 0; cgR < L.classIds.length; cgR++){ /* v6.57 */
       var cidR = L.classIds[cgR];
       var lcR = arr(loadC, cidR)[d];
       if (sOldR != null && Math.floor(sOldR / NH) === d){
@@ -798,7 +801,7 @@ function repairSoft(ls, teachers, classes, settings, placement){
       }
     }
     var lk = kindL(L);
-    for (var ci = 0; ci < L.classIds.length; ci++){
+    if (!tb) for (var ci = 0; ci < L.classIds.length; ci++){ /* v6.57: tblock bez kolizji klasowych */
       var cid = L.classIds[ci];
       var others = (busyC[cid] && busyC[cid][s]) || [];
       var rewN = 0;
@@ -826,7 +829,7 @@ function repairSoft(ls, teachers, classes, settings, placement){
     });
     busyT[L.teacherId][s1] = true;
     arr(loadT, L.teacherId)[Math.floor(s1 / NH)]++;
-    L.classIds.forEach(function(cid){
+    if (!L.tblock) L.classIds.forEach(function(cid){ /* v6.57 */
       var m = busyC[cid] = busyC[cid] || {};
       var fresh = !m[s1] || m[s1].length === 0;
       m[s1] = m[s1] || []; m[s1].push(L);
@@ -838,7 +841,7 @@ function repairSoft(ls, teachers, classes, settings, placement){
     var d0 = Math.floor(s0 / NH), d1 = Math.floor(s1 / NH);
     if (d0 === d1) return true;
     if (L.teacherId && arr(loadT, L.teacherId)[d1] >= settings.teacherMaxPerDay) return false;
-    for (var ci = 0; ci < L.classIds.length; ci++) if (arr(loadC, L.classIds[ci])[d1] >= settings.classMaxPerDay) return false;
+    if (!L.tblock) for (var ci = 0; ci < L.classIds.length; ci++) if (arr(loadC, L.classIds[ci])[d1] >= settings.classMaxPerDay) return false; /* v6.57 */
     return true;
   }
   (settings.pairs || []).forEach(function(p){
@@ -868,7 +871,7 @@ function repairSoft(ls, teachers, classes, settings, placement){
   });
   if (settings.autBlocks){
     var cnt = {};
-    ls.forEach(function(L){ if (/aut/i.test(names[L.classIds[0]] || "")) { cnt[L.classIds[0]] = cnt[L.classIds[0]] || {}; cnt[L.classIds[0]][L.teacherId] = (cnt[L.classIds[0]][L.teacherId] || 0) + 1; } });
+    ls.forEach(function(L){ if (!L.tblock && /aut/i.test(names[L.classIds[0]] || "")) { cnt[L.classIds[0]] = cnt[L.classIds[0]] || {}; cnt[L.classIds[0]][L.teacherId] = (cnt[L.classIds[0]][L.teacherId] || 0) + 1; } }); /* v6.57: tblock poza blokami aut */
     for (var ck in cnt){
       var bt = null, bc = 0; for (var t in cnt[ck]) if (cnt[ck][t] > bc){ bc = cnt[ck][t]; bt = t; }
       if (bt == null) continue;
@@ -914,10 +917,49 @@ function repairSoft(ls, teachers, classes, settings, placement){
       }
     }
   }
+  /* v6.57: dogięcie — po naprawach miękkich spróbuj dołożyć nieprzypisane lekcje w wolne, wykonalne sloty */
+  function placeR(L, s){
+    placement[L.id] = s;
+    (busyT[L.teacherId] = busyT[L.teacherId] || {})[s] = true;
+    arr(loadT, L.teacherId)[Math.floor(s / NH)]++;
+    var kSD2 = L.classIds[0] + "|" + Math.floor(s / NH) + "|" + L.subject; cntSD[kSD2] = (cntSD[kSD2] || 0) + 1;
+    (slotSD[L.classIds[0] + "|" + L.subject + "|" + (L.group || "")] = slotSD[L.classIds[0] + "|" + L.subject + "|" + (L.group || "")] || []).push(s);
+    if (!L.tblock) L.classIds.forEach(function(cid){
+      var m = busyC[cid] = busyC[cid] || {};
+      var fresh = !m[s] || m[s].length === 0;
+      m[s] = m[s] || []; m[s].push(L);
+      if (fresh) arr(loadC, cid)[Math.floor(s / NH)]++;
+    });
+  }
+  for (var passC = 0; passC < 3; passC++){
+    var got = false;
+    ls.forEach(function(L){
+      if (placement[L.id] != null) return;
+      var best = -1, bestSc = Infinity;
+      for (var sC = 0; sC < 5 * NH; sC++){
+        if (!freeFor(L, sC) || !dayOK(L, -1, sC)) continue;
+        if (L.studentId){
+          var stCl = false;
+          ls.forEach(function(X){ if (X.id !== L.id && X.studentId && X.studentId === L.studentId && placement[X.id] === sC) stCl = true; });
+          if (stCl) continue;
+        }
+        var rC = effRoomId(L);
+        if (rC){
+          var rOcc = ls.filter(function(X){ return X.id !== L.id && placement[X.id] === sC && effRoomId(X) === rC; });
+          if (rOcc.length && roomGroups(rOcc.concat([L])) > roomCap(rC)) continue;
+        }
+        var scC = 2.0 * (L.tblock ? 0 : arr(loadC, L.classIds[0])[Math.floor(sC / NH)]) + 1.5 * arr(loadT, L.teacherId)[Math.floor(sC / NH)] + 0.3 * (sC % NH) + (kindL(L) === "swietl" && sC % NH >= 2 && sC % NH <= 4 ? 3 : 0);
+        if (scC < bestSc){ bestSc = scC; best = sC; }
+      }
+      if (best >= 0){ placeR(L, best); got = true; }
+    });
+    if (!got) break;
+  }
   return placement;
 }
 
 /* ==================== automatyczny układacz ==================== */
+/* v6.57: blok nauczyciela (zajęcia bez oddziału — świetlica, doradztwo) + dognięcie automatu: wypychanie do 2 lekcji, 6 rund, dogięcie po naprawach miękkich */
 function attemptSchedule(ls, teachers, classes, settings, rng){
   var placement = {}, unplaced = [];
   var byId = {}; ls.forEach(function(l){ byId[l.id] = l; });
@@ -936,7 +978,7 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
   function place(L, s){
     placement[L.id] = s;
     (busyT[L.teacherId] = busyT[L.teacherId] || {})[s] = true;
-    L.classIds.forEach(function(cid){
+    if (!L.tblock) L.classIds.forEach(function(cid){ /* v6.57: blok nauczyciela nie obciąża klasy */
       var m = busyC[cid] = busyC[cid] || {};
       var fresh = !m[s] || m[s].length === 0;
       m[s] = m[s] || []; m[s].push(L);
@@ -953,7 +995,7 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
     var s = placement[L.id]; if (s == null) return;
     delete placement[L.id];
     if (busyT[L.teacherId]) delete busyT[L.teacherId][s];
-    L.classIds.forEach(function(cid){
+    if (!L.tblock) L.classIds.forEach(function(cid){ /* v6.57 */
       var v = busyC[cid] && busyC[cid][s];
       if (v){ var ix = v.indexOf(L); if (ix >= 0) v.splice(ix, 1); if (!v.length) arr(loadC, cid)[dayOf(s)]--; }
     });
@@ -966,14 +1008,16 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
   }
   function feasible(L, s){
     var d = dayOf(s), h = s % NH;
+    var tb = !!L.tblock; /* v6.57: blok nauczyciela — bez ograniczeń klasowych */
     if (slotBlocked(settings, s)) return false;
     if (L.teacherId && unavail[L.teacherId] && unavail[L.teacherId][s]) return false;
     if (L.teacherId && busyT[L.teacherId] && busyT[L.teacherId][s]) return false;
     if (L.teacherId && arr(loadT, L.teacherId)[d] >= settings.teacherMaxPerDay) return false;
-    for (var cbi = 0; cbi < L.classIds.length; cbi++) if (clsBlock[L.classIds[cbi]][s]) return false;
+    if (!tb) for (var cbi = 0; cbi < L.classIds.length; cbi++) if (clsBlock[L.classIds[cbi]][s]) return false; /* v6.57 */
     for (var ri = 0; ri < hardR.length; ri++){
       var rr = hardR[ri];
       if (!ruleMatch(rr, L)) continue;
+      if (tb && ("" + rr.type).indexOf("tch") !== 0) continue; /* v6.57: tblock — tylko reguły nauczyciela */
       if (!ruleSlotOk(rr, L, s, settings, function(d2){ return subjDay[L.classIds[0] + "|" + d2 + "|" + L.subject] || 0; }, function(sn){
         var out = [];
         for (var rc = 0; rc < L.classIds.length; rc++){ var v = busyC[L.classIds[rc]] && busyC[L.classIds[rc]][sn]; if (v) out = out.concat(v); }
@@ -985,7 +1029,7 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
       })) return false;
     }
     var gdF = 0; /* v6.23: klasy bez okienek — najtwardsza reguła (limit 0, sprawdzany zawsze) */
-    for (var cgF = 0; cgF < L.classIds.length; cgF++){
+    if (!tb) for (var cgF = 0; cgF < L.classIds.length; cgF++){ /* v6.57 */
       var cidF = L.classIds[cgF];
       if (arr(loadC, cidF)[d] >= settings.classMaxPerDay) return false;
       if (gdF >= 0){
@@ -999,7 +1043,7 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
       }
     }
     var lk = kindL(L);
-    for (var ci = 0; ci < L.classIds.length; ci++){
+    if (!tb) for (var ci = 0; ci < L.classIds.length; ci++){ /* v6.57: tblock bez kolizji klasowych */
       var cid = L.classIds[ci];
       var others = (busyC[cid] && busyC[cid][s]) || [];
       var rewN = 0;
@@ -1029,7 +1073,7 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
     return true;
   }
   function conflictsAt(U, s2){
-    var out = [], lk = kindL(U);
+    var out = [], lk = kindL(U), tbU = !!U.tblock; /* v6.57 */
     /* v6.39: czy sala U w s2 przekroczyłaby pojemność (grupy klas > cap) */
     var rU0 = effRoomId(U), roomOver = false;
     if (rU0){
@@ -1040,7 +1084,7 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
       if (x.id === U.id) return;
       if (U.link && x.link === U.link) return;
       if (U.teacherId && x.teacherId === U.teacherId){ out.push(x); return; }
-      for (var i = 0; i < U.classIds.length; i++){
+      if (!tbU && !x.tblock) for (var i = 0; i < U.classIds.length; i++){ /* v6.57: blok nauczyciela nie koliduje z lekcjami klasy */
         if (x.classIds.indexOf(U.classIds[i]) >= 0 && classClash(lk, kindL(x), U.group, x.group)){ out.push(x); return; }
       }
       /* v6.33: ten sam uczeń (1:1) nie może mieć dwóch lekcji naraz */
@@ -1102,7 +1146,7 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
     if (bestS >= 0){ for (var pi = 0; pi < u.length; pi++) place(u[pi], bestS); }
     else { for (var qi = 0; qi < u.length; qi++) unplaced.push(u[qi].id); }
   }
-  for (var round = 0; round < 4; round++){
+  for (var round = 0; round < 6; round++){ /* v6.57: więcej rund dogięcia */
     var progress = false;
     var un2 = unplaced.slice();
     for (var ui = 0; ui < un2.length; ui++){
@@ -1129,37 +1173,46 @@ function attemptSchedule(ls, teachers, classes, settings, rng){
           if (!feasible(U, s2)) continue;
           place(U, s2); unplaced.splice(unplaced.indexOf(uid), 1); progress = true; break;
         }
-        if (blockers.length > 1) continue;
-        var B = blockers[0];
-        if (B.link) continue;
+        if (blockers.length > 2) continue; /* v6.57: dogięcie — wypychanie do 2 lekcji naraz */
+        if (blockers.some(function(b){ return b.link; })) continue;
         /* v6.23: najtwardsza reguła — nie wypychaj lekcji, jeśli jej klasa dostanie okienko w tym dniu */
         var okOldB = true;
-        for (var cbB = 0; cbB < B.classIds.length; cbB++){
-          var cidB = B.classIds[cbB];
-          var hsOldB = [];
-          for (var shB = dd * NH; shB < dd * NH + NH; shB++){
-            var vB = busyC[cidB] && busyC[cidB][shB];
-            if (!vB || !vB.length) continue;
-            var keepB = false;
-            for (var kb = 0; kb < vB.length; kb++) if (vB[kb] !== B){ keepB = true; break; }
-            if (keepB && hsOldB.indexOf(shB % NH) < 0) hsOldB.push(shB % NH);
+        for (var bI = 0; bI < blockers.length; bI++){
+          var B = blockers[bI];
+          if (B.tblock) continue; /* v6.57: blok nauczyciela — bez klasy, nie stwarza okienek */
+          for (var cbB = 0; cbB < B.classIds.length; cbB++){
+            var cidB = B.classIds[cbB];
+            var hsOldB = [];
+            for (var shB = dd * NH; shB < dd * NH + NH; shB++){
+              var vB = busyC[cidB] && busyC[cidB][shB];
+              if (!vB || !vB.length) continue;
+              var keepB = false;
+              for (var kb = 0; kb < vB.length; kb++) if (vB[kb] !== B){ keepB = true; break; }
+              if (keepB && hsOldB.indexOf(shB % NH) < 0) hsOldB.push(shB % NH);
+            }
+            if (dayGaps(hsOldB) > 0){ okOldB = false; break; }
           }
-          if (dayGaps(hsOldB) > 0){ okOldB = false; break; }
+          if (!okOldB) break;
         }
         if (!okOldB) continue;
-        unplace(B);
-        if (!feasible(U, s2)){ place(B, s2); continue; }
+        blockers.forEach(function(b){ unplace(b); });
+        if (!feasible(U, s2)){ blockers.forEach(function(b){ place(b, s2); }); continue; }
         place(U, s2);
-        var sB = -1, bestB = -Infinity;
-        for (var d3 = 0; d3 < 5; d3++) for (var h3 = 0; h3 < NH; h3++){
-          var s3 = d3 * NH + h3;
-          if (s3 === s2 || !feasible(B, s3)) continue;
-          var sc = -(2.0 * arr(loadC, B.classIds[0])[d3]) - (1.5 * arr(loadT, B.teacherId)[d3]) + rng() * 0.9;
-          if (sc > bestB){ bestB = sc; sB = s3; }
+        var moved = [];
+        for (var bJ = 0; bJ < blockers.length; bJ++){
+          var B2 = blockers[bJ];
+          var sB = -1, bestB = -Infinity;
+          for (var d3 = 0; d3 < 5; d3++) for (var h3 = 0; h3 < NH; h3++){
+            var s3 = d3 * NH + h3;
+            if (s3 === s2 || !feasible(B2, s3)) continue;
+            var sc = -(2.0 * (B2.tblock ? 0 : arr(loadC, B2.classIds[0])[d3])) - (1.5 * arr(loadT, B2.teacherId)[d3]) + rng() * 0.9;
+            if (sc > bestB){ bestB = sc; sB = s3; }
+          }
+          if (sB >= 0){ place(B2, sB); moved.push(B2); } else break;
         }
-        if (sB >= 0){
-          place(B, sB); unplaced.splice(unplaced.indexOf(uid), 1); progress = true; break;
-        } else { unplace(U); place(B, s2); }
+        if (moved.length === blockers.length){
+          unplaced.splice(unplaced.indexOf(uid), 1); progress = true; break;
+        } else { unplace(U); moved.forEach(function(b2){ unplace(b2); }); blockers.forEach(function(b){ place(b, s2); }); }
       }
       if (progress && unplaced.indexOf(uid) < 0) { /* przeniesiony */ }
     }
@@ -1177,6 +1230,7 @@ function autoSchedule(ls, teachers, classes, settings, tries){
     if (!best || r.cost < best.cost) best = r;
   }
   if (best && best.placement) repairSoft(ls, teachers, classes, settings, best.placement);
+  if (best && best.placement) best.unplaced = ls.filter(function(L){ return best.placement[L.id] == null; }).map(function(L){ return L.id; }); /* v6.57: po dogięciu odśwież listę nieprzypisanych */
   return best;
 }
 
@@ -1196,15 +1250,15 @@ function findViolations(ls, teachers, classes, placement, settings){
     var d = Math.floor(s / NH), h = s % NH;
     if (tM[L.teacherId] && tM[L.teacherId].unavail.indexOf(s) >= 0) errs.push(tNm(L.teacherId) + " nie jest dostępny/na: " + DAYS[d] + ", lekcja " + (h + 1));
     if (trM.t[L.teacherId] && trM.t[L.teacherId][s]) errs.push(tNm(L.teacherId) + " jest wtedy na wyjeździe (🚌 " + trM.t[L.teacherId][s] + "): " + DAYS[d] + ", lekcja " + (h + 1)); /* v6.42 */
-    for (var tri2 = 0; tri2 < L.classIds.length; tri2++) if (trM.c[L.classIds[tri2]] && trM.c[L.classIds[tri2]][s]) errs.push("Klasa " + cNm(L.classIds[tri2]) + " jest wtedy na wyjeździe (🚌 " + trM.c[L.classIds[tri2]][s] + "): " + DAYS[d] + ", lekcja " + (h + 1));
-    for (var cbi2 = 0; cbi2 < L.classIds.length; cbi2++) if (cbM[L.classIds[cbi2]] && cbM[L.classIds[cbi2]].indexOf(s) >= 0) errs.push("Klasa " + cNm(L.classIds[cbi2]) + " nie może mieć wtedy lekcji (blokada oddziału, np. przewozy): " + DAYS[d] + ", lekcja " + (h + 1));
+    if (!L.tblock) for (var tri2 = 0; tri2 < L.classIds.length; tri2++) if (trM.c[L.classIds[tri2]] && trM.c[L.classIds[tri2]][s]) errs.push("Klasa " + cNm(L.classIds[tri2]) + " jest wtedy na wyjeździe (🚌 " + trM.c[L.classIds[tri2]][s] + "): " + DAYS[d] + ", lekcja " + (h + 1));
+    if (!L.tblock) for (var cbi2 = 0; cbi2 < L.classIds.length; cbi2++) if (cbM[L.classIds[cbi2]] && cbM[L.classIds[cbi2]].indexOf(s) >= 0) errs.push("Klasa " + cNm(L.classIds[cbi2]) + " nie może mieć wtedy lekcji (blokada oddziału, np. przewozy): " + DAYS[d] + ", lekcja " + (h + 1));
     if (slotBlocked(settings, s)) errs.push("Zablokowana godzina: " + tNm(L.teacherId) + " (" + cNm(L.classIds[0]) + ") — " + DAYS[d] + ", lekcja " + (h + 1) + " jest wyłączona w Zasadach planu");
     if (L.teacherId){
       var kT = L.teacherId + "|" + s;
       if (slotT[kT]) errs.push(tNm(L.teacherId) + " ma dwie lekcje naraz (" + DAYS[d] + ", godz. " + (h + 1) + ")");
       else slotT[kT] = L;
     }
-    L.classIds.forEach(function(cid){
+    if (!L.tblock) L.classIds.forEach(function(cid){ /* v6.57: blok nauczyciela nie obciąża klasy */
       var m = byClsSlot[cid] = byClsSlot[cid] || {};
       var fresh = !m[s] || m[s].length === 0;
       (m[s] = m[s] || []).push(L);
@@ -1273,7 +1327,7 @@ function findViolations(ls, teachers, classes, placement, settings){
   var hrs = rulesOn(settings).filter(function(r){ return r.hard; });
   if (hrs.length){
     var bsV = {}, csV = {}, svM = {};
-    ls.forEach(function(L){ var sv2 = placement[L.id]; if (sv2 == null) return;
+    ls.forEach(function(L){ var sv2 = placement[L.id]; if (sv2 == null || L.tblock) return; /* v6.57 */
       L.classIds.forEach(function(cid){ (bsV[cid + "|" + sv2] = bsV[cid + "|" + sv2] || []).push(L); });
       var kv = L.classIds[0] + "|" + Math.floor(sv2 / NH) + "|" + L.subject; csV[kv] = (csV[kv] || 0) + 1;
       (svM[L.classIds[0] + "|" + L.subject + "|" + (L.group || "")] = svM[L.classIds[0] + "|" + L.subject + "|" + (L.group || "")] || []).push(sv2); });
@@ -1284,6 +1338,7 @@ function findViolations(ls, teachers, classes, placement, settings){
       for (var rv = 0; rv < hrs.length; rv++){
         var r5 = hrs[rv];
         if (!ruleMatch(r5, L)) continue;
+        if (L.tblock && ("" + r5.type).indexOf("tch") !== 0) continue; /* v6.57: blok nauczyciela — tylko reguły nauczyciela */
         if (r5.type === "subjHours" && (hv < (r5.a || 1) - 1 || hv > (r5.b || NH) - 1)){
           errs.push("Reguła własna: „" + r5.subject + "” tylko na lekcjach " + (r5.a || 1) + "–" + (r5.b || NH) + " — a jest " + DAYS[dv] + ", lekcja " + (hv + 1) + " (" + cNm(L.classIds[0]) + ")");
         } else if (r5.type === "subjNotLast" && hv >= lastHourOf(settings, dv)){
@@ -1342,7 +1397,7 @@ function findViolations(ls, teachers, classes, placement, settings){
     hrs.filter(function(r9){ return r9.type === "subjBlock"; }).forEach(function(r9){
       var bn9 = Math.max(2, Math.min(4, r9.n || 2));
       var byCG2 = {};
-      ls.forEach(function(L){ if (!ruleMatch(r9, L)) return;
+      ls.forEach(function(L){ if (L.tblock || !ruleMatch(r9, L)) return; /* v6.57 */
         var kk9 = L.classIds[0] + "|" + (L.group || "") + "|" + L.subject; (byCG2[kk9] = byCG2[kk9] || []).push(L); });
       for (var kk8 in byCG2){
         var slots9 = byCG2[kk8].map(function(L){ return placement[L.id]; }).filter(function(sv9){ return sv9 != null; }).sort(function(a9, b9){ return a9 - b9; });
@@ -2033,7 +2088,8 @@ function renderDane(){
     + '<option value="A"' + (a.week === 'A' ? ' selected' : '') + '>A</option>'
     + '<option value="B"' + (a.week === 'B' ? ' selected' : '') + '>B</option></select>';
   h += wkSel;
-  h += wkSel + '<select class="inp" style="max-width:120px" title="Uczeń (zajęcia indywidualne 1:1) — puste = cała klasa" onchange="setActStudent(\'' + a.id + '\',this.value)">'
+  h += '<label style="display:flex;align-items:center;gap:2px" title="Blok nauczyciela — zajęcia bez oddziału (np. świetlica, doradztwo zawodowe): obciążają tylko nauczyciela; bez konfliktów, limitów i okienek klasy"><input type="checkbox"' + (a.tblock ? " checked" : "") + ' onchange="setAct(\'' + a.id + '\',\'tblock\',this.checked)"><b>N</b></label>';
+  h += '<select class="inp" style="max-width:120px" title="Uczeń (zajęcia indywidualne 1:1) — puste = cała klasa" onchange="setActStudent(\'' + a.id + '\',this.value)">'
        + '<option value=""' + (!a.studentId ? " selected" : "") + '>— cała klasa —</option>'
        + studentsOf(a.classId).map(function(st){ return '<option value="' + st.id + '"' + (a.studentId === st.id ? " selected" : "") + '>' + esc(st.name) + "</option>"; }).join("")
        + "</select>"
@@ -2044,7 +2100,7 @@ function renderDane(){
        + '<input class="inp" type="number" min="1" max="20" style="text-align:center" value="' + a.hours + '" onchange="setAct(\'' + a.id + '\',\'hours\',this.value)">'
        + '<button class="del" onclick="delAct(\'' + a.id + '\')">✕</button></div>';
   });
-  h += '<button class="btn2" onclick="addAct()">+ Dodaj zajęcia</button> <span class="hint">Godziny = liczba lekcji tygodniowo. Zajęcia łączone (druga klasa) chodzą jednocześnie w obu oddziałach. Powiązania ↔: ta sama etykieta = zawsze ta sama godzina (np. religia + świetlica równolegle).</span></div></div>';
+  h += '<button class="btn2" onclick="addAct()">+ Dodaj zajęcia</button> <span class="hint">Godziny = liczba lekcji tygodniowo. Zajęcia łączone (druga klasa) chodzą jednocześnie w obu oddziałach. Powiązania ↔: ta sama etykieta = zawsze ta sama godzina (np. religia + świetlica równolegle). N = blok nauczyciela: zajęcia bez oddziału — obciążają tylko nauczyciela, nie plan klasy.</span></div></div>';
   h += '<div class="card"><div class="hd">📥 Import przydziałów nauczycieli — wklej z Worda/Excela, bez klepania</div><div class="bd">';
   h += '<p class="hint">Rozpoznaję kolumny <b>Nauczyciel · Przedmiot · Klasa · Godziny</b> w dowolnej kolejności (godziny i klasę wykrywam sam). Rozpoznaję szkolne nazwy oddziałów (np. 5aM, 7z, „1a aut."). Scalone komórki Worda działają. Pliki <b>.docx</b> (Word) i <b>.xlsx</b> (Excel) wczytuję bezpośrednio — czytam tabele i arkusze; stary .doc wklej przez <b>Ctrl+V</b> albo zapisz jako .txt/.docx. Skrót nauczyciela możesz podać w nawiasie: Kowalska Anna (Kow). Grupy czytam sam: z kolumny uwag („Grupa 1/2") i z nazwy oddziału („1 a b" → klasa 1a, grupa b).</p>';
   h += '<div class="row"><input type="file" class="file" id="importFile" accept=".txt,.csv,.tsv,.docx,.xlsx" onchange="importFileRead(this)"><button class="btn" onclick="analyze()">🔍 Analizuj</button></div>';
@@ -2360,6 +2416,7 @@ function setAct(id, key, val){
   else if (key === "link") a.link = (val || "").trim();
   else if (key === "withClassId") a.withClassId = (val && val !== a.classId) ? val : "";
   else if (key === "week") a.week = (val === "A" || val === "B") ? val : ""; /* v6.35 */
+  else if (key === "tblock") a.tblock = !!val; /* v6.57: blok nauczyciela */
   else a[key] = val;
   prunePlacement(); save(); render();
 }
@@ -2835,7 +2892,7 @@ function doImport(){
       clsIds.push(c.id);
     });
     if (clsIds.length > 1) mergedN++;
-    S.activities.push({ id: nextId(S.activities, "a"), classId: clsIds[0], withClassId: clsIds[1] || "", teacherId: t ? t.id : "", subject: r.subject, hours: r.hours, kind: r.kind || guessKind(r.subject), group: r.group || "", link: "" });
+    S.activities.push({ id: nextId(S.activities, "a"), classId: clsIds[0], withClassId: clsIds[1] || "", teacherId: t ? t.id : "", subject: r.subject, hours: r.hours, kind: r.kind || guessKind(r.subject), group: r.group || "", link: "", tblock: ((names.every(function(nm){ return nm === "-"; })) || /^obowiązki/i.test(r.subject || "")) ? true : "" }); /* v6.57: blok nauczyciela — zajęcia bez oddziału */
   });
   importRows = null; importText = ""; draftClear(); /* v6.46 */ save(); render();
   flash("✅ Zaimportowano " + rows.length + " przydziałów (+" + addedT + " nauczycieli, +" + addedC + " klas" + (mergedN ? ", " + mergedN + " zajęć łączonych" : "") + (wakatN ? ", " + wakatN + " bez nauczyciela (wakat)" : "") + "). Wygeneruj plan albo dokładaj ręcznie.", "ok");

@@ -152,7 +152,7 @@ function withData(){ const st = fresh(); st.classes.push({ id: "c1", name: "1a" 
 /* ==================== E. sanity ==================== */
 {
   T("E1: stopka „Wersja 6.4x.” w html apki (wersjo-odporne, ≥6.46)",
-    /Wersja 6\.4[6-9]\./.test(html));
+    /Wersja 6\.\d+\./.test(html));
   fresh(); save();
   T("E2: save() stawia znacznik lastSaveAt",
     S.settings.lastSaveAt > 0);

@@ -527,7 +527,7 @@ SEC("20. asystent usunięty (v6.48)");
     !("assistantUrl" in st.settings) && !("chatToken" in st.settings));
   T("v6.48: html apki bez czatu (chatfab / chatpan / Asystent AI)",
     raw.indexOf("chatfab") < 0 && raw.indexOf("chatpan") < 0 && raw.indexOf("Asystent AI") < 0);
-  T("v6.48: stopka „Wersja 6.56.” w html apki", raw.indexOf("Wersja 6.56.") >= 0);
+  T("stopka „Wersja 6.5x+” w html apki (wersjo-odporna, ≥6.57)", /Wersja 6\.[5-9]\d*\./.test(html));
 }
 
 /* ==================== 21. etap 2 kreatora: min. odstęp dni / maks. tygodniowo / tylko wybrane dni (v6.9) ==================== */

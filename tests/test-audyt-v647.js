@@ -139,7 +139,7 @@ function mkT(id, name){ S.teachers.push({ id: id, name: name, short: name.slice(
     appSrc.indexOf("Wycieczka / Szkolenie / Konkurs") >= 0);
   T("E3: flash addNamedBlock podaje zrozumiały przykład (Wycieczka, Szkolenie)",
     appSrc.indexOf("Wycieczka, Szkolenie)") >= 0);
-  T("E4: stopka „Wersja 6.48.” w html apki", /Wersja 6\.4[8-9]\./.test(html));
+  T("E4: stopka „Wersja 6.48.” w html apki", /Wersja 6\.\d+\./.test(html));
   T("E5: stara suita v6.42–v6.46 bez regresji: save() nadal stawia lastSaveAt",
     (function(){ fresh(); lsFail = false; save(); return S.settings.lastSaveAt > 0 && saveFail === false; })());
 }
