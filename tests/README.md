@@ -1,6 +1,6 @@
 # Testy apki Plan Zajęć (SPS nr 7)
 
-15 suit testowych — zwykły Node.js (≥18), **zero zależności do instalacji** (`npm install` niepotrzebne).
+16 suit testowych — zwykły Node.js (≥18), **zero zależności do instalacji** (`npm install` niepotrzebne).
 Każda suita czyta kod apki z pliku wskazanego zmienną `APP_SOURCE` (domyślnie `index.html` w korzeniu repo),
 wyciąga z niego `<script>`, evaluuje i testuje funkcje. Każda kończy się `WYNIK: N OK, 0 FAIL`
 i kodem wyjścia 0 (przy FAIL — 1), więc nadają się do CI.
@@ -10,6 +10,7 @@ i kodem wyjścia 0 (przy FAIL — 1), więc nadają się do CI.
 | Plik | Zakres | Testów |
 |---|---|---|
 | `test.js` | rdzeń: importy, walidator, automat, eksporty + v6.48 (asystent usunięty) | 405 |
+| `test-inicjaly-v661.js` | v6.61: automatyczne inicjały nauczycieli BM wszędzie — nameParts (mieszane formaty „Imię Nazwisko”/„Nazwisko Imię”), tShort na żywo, clearShorts, UI modułu Nauczyciele | 38 |
 | `test-nadrobienia-v660.js` | v6.60: nadrobienie braków — konsola niewykonalności (analyzeUnplaced), licznik przykryć (fairness Σ), QR na planszach A1/Zbiorczej (silnik Nayuki), raport jakości A4, planUrl | 64 |
 | `test-kolejka-v659.js` | v6.59: przełącznik układu siatki (dni poziomo), zastępstwa 2.0 (przykrycia klikaniem, oddziały poza szkołą), undo ×N, warianty planu, e-dziennik .xlsx | 91 |
 | `test-silnik-v657.js` | v6.57: blok nauczyciela (tblock), dogięcie automatu (2 blokery, dognięcie po naprawach) | 44 |

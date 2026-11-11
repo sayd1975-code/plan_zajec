@@ -164,7 +164,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.60.
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.61.
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -360,7 +360,27 @@ function lessons(wk){ return buildLessons(S.activities.filter(function(a){ retur
 function tById(){ var m = {}; S.teachers.forEach(function(t){ m[t.id] = t; }); return m; }
 function cById(){ var m = {}; S.classes.forEach(function(c){ m[c.id] = c; }); return m; }
 function tName(id){ var t = tById()[id]; return t ? t.name : (id ? "?" : "—"); }
-function tShort(id){ var t = tById()[id]; return t ? t.short : (id ? "?" : "—"); }
+var IMIONA_SET = (function(){ /* v6.61: lista imion — do rozpoznawania formatu nazwy (mieszane „Imię Nazwisko" i „Nazwisko Imię"); brak na liście → konwencja „Imię Nazwisko" */
+  var s = {}, list = "ada adam adrianna adrian agata agnieszka aleksander aleksandra alicja amelia anastazja andrea andrzej aneta angela anna antoni antonina arkadiusz artur barbara bartłomiej bartosz beata bernadeta błażej bogdan bogusław bożena bronisław cecylia celina cezary cyryl danuta dariusz damian daniel dawid dominik dominika dorota edward edyta emil emilia ernest ewa ewelina filip franciszek gabriela gaweł genowefa grażyna grzegorz gustaw halina hanna helena henryk hubert igor irena ireneusz iwona iza izabela jacek jadwiga jagoda jan janina joanna jolanta jarosław jerzy józef julianna justyna kacper kaja kamil kamila karol karolina katarzyna kazimierz kinga kornel kornelia krystian krzysztof krystyna ksawery lech leon leszek lidia lucyna łukasz maciej magdalena małgorzata malwina marcin marek maria marianna marta martyna mariusz marzena mateusz michał michalina mieczysław mikołaj miłosz milena monika natalia nataniel nina nikodem norbert olga otylia patrycja patryk paulina paweł piotr przemysław rafał renata robert roksana roman sandra sara sebastian sergiusz seweryn sławomir stanisław stanisława stefan sylwia szymon tadeusz teresa tomasz tobiasz urszula weronika wiktoria wiktor wincenty wiolleta wioletta witold władysław waldemar wojciech zbigniew zenon zofia żaneta zygmunt";
+  list.split(/\s+/).forEach(function(n){ s[n] = 1; });
+  return s;
+})();
+function nameParts(n){ /* v6.61: rozbiera nazwę na imię+nazwisko; imię = słowo z IMIONA_SET; niejednoznaczne (oba albo żaden) → konwencja „Imię Nazwisko"; nawiasy pomijane */
+  var w = String(n || "").replace(/[(\[][^)\]]*[)\]]/g, " ").replace(/\./g, " ").split(/\s+/).filter(Boolean);
+  if (!w.length) return { imie: "", nazwisko: "", single: true };
+  if (w.length === 1) return { imie: w[0], nazwisko: w[0], single: true };
+  var aImie = !!IMIONA_SET[w[0].toLowerCase()], zImie = !!IMIONA_SET[w[w.length - 1].toLowerCase()];
+  if (aImie === zImie) return { imie: w[0], nazwisko: w[w.length - 1], single: false };
+  return aImie ? { imie: w[0], nazwisko: w[w.length - 1], single: false } : { imie: w[w.length - 1], nazwisko: w[0], single: false };
+}
+function tShort(id){ /* v6.61: pole „skrót” = ręczne nadpisanie; puste albo równe staremu defaultowi generatora (3 litery ostatniego słowa) → automatyczne inicjały BM z teacherInits (kolizje rozstrzygane same) */
+  var t = tById()[id];
+  if (!t) return id ? "?" : "—";
+  var def = (String(t.name || "").split(/\s+/).filter(Boolean).slice(-1)[0] || "").slice(0, 3);
+  if (t.short && t.short !== def) return t.short;
+  var m = teacherInits();
+  return m[id] || t.short || def || "?";
+}
 function cName(id){ var c = cById()[id]; return c ? c.name : "?"; }
 function hoursBy(key){ var m = {}; S.activities.forEach(function(a){ m[a[key]] = (m[a[key]] || 0) + a.hours; }); return m; }
 
@@ -1986,15 +2006,17 @@ function renderDane(){
   h += "</div></div>";
   h += '<div class="card"><div class="hd">👩‍🏫 Nauczyciele</div><div class="bd">';
   if (!S.teachers.length) h += '<p class="hint">Brak nauczycieli — dodaj pierwszego albo zaimportuj przydziały (niżej).</p>';
+  var bmMap = teacherInits(); /* v6.61: podgląd automatycznych inicjałów w pustym polu „skrót” */
   S.teachers.forEach(function(t){
     h += '<div class="row"><input class="inp" style="flex:1" value="' + esc(t.name) + '" onchange="renTeacher(\'' + t.id + '\',this.value)">'
-       + '<input class="inp" style="width:58px;text-align:center" title="skrót" value="' + esc(t.short) + '" onchange="renShort(\'' + t.id + '\',this.value)">'
+       + '<input class="inp" style="width:58px;text-align:center" title="skrót (puste = automatyczne inicjały BM)" value="' + esc(t.short) + '" placeholder="' + esc(bmMap[t.id] || "BM") + '" onchange="renShort(\'' + t.id + '\',this.value)">'
        + '<input class="inp" type="number" min="0" max="40" style="width:52px;text-align:center" title="Etat w godzinach lekcyjnych (0 = bez kontroli przy imporcie)" value="' + (t.etat || 0) + '" onchange="setEtat(\'' + t.id + '\',this.value)">'
        + '<span class="badge">' + (hByT[t.id] || 0) + ' h</span>'
        + '<button class="btn2" title="Ograniczenia dostępności" onclick="ogrLink(\'' + t.id + '\')">⛔</button>'
        + '<button class="del" title="Usuń" onclick="delTeacher(\'' + t.id + '\')">✕</button></div>';
   });
-  h += '<div class="row"><input id="newTeacherName" class="inp" style="flex:1" placeholder="np. Jan Kowalski"><input id="newTeacherShort" class="inp" style="width:58px;text-align:center" placeholder="skrót"><button class="btn" onclick="addTeacher()">+ Dodaj</button></div>';
+  h += '<div class="row"><input id="newTeacherName" class="inp" style="flex:1" placeholder="np. Jan Kowalski"><input id="newTeacherShort" class="inp" style="width:58px;text-align:center" placeholder="skrót (puste = BM)"><button class="btn" onclick="addTeacher()">+ Dodaj</button></div>';
+  h += '<div class="row" style="margin-top:4px"><span class="hint" style="flex:1;margin:0">Pusty skrót → plan używa automatycznych inicjałów (Imię Nazwisko → np. BM; kolizja → kolejna litera nazwiska). „↻ Wyczyść skróty” zeruje wszystkie pola i wraca do inicjałów.</span><button class="btn2" onclick="clearShorts()">↻ Wyczyść skróty</button></div>';
   h += "</div></div>";
   h += '<div class="card"><div class="hd">🏫 Sale / gabinety <span class="hint" style="font-weight:400">— uczniowie mają salę macierzystą (przy oddziale); nauczyciel przemieszcza się na zajęcia; liczba = pojemność: ile różnych klas może mieć w sali zajęcia naraz (domyślnie 1)</span></div><div class="bd">';
   if (!S.rooms.length) h += '<p class="hint">Brak sal — dodaj pierwszą (np. „Gabinet logopedy").</p>';
@@ -2233,13 +2255,17 @@ function delClass(id){
 function addTeacher(){
   var v = document.getElementById("newTeacherName").value.trim();
   if (!v) return;
-  var sh = document.getElementById("newTeacherShort").value.trim() || v.split(/\s+/).slice(-1)[0].slice(0, 3);
+  var sh = document.getElementById("newTeacherShort").value.trim(); /* v6.61: pusty skrót → automatyczne inicjały BM */
   S.teachers.push({ id: nextId(S.teachers, "t"), name: v, short: sh, unavail: [], unavailWhy: {} }); save(); render(); /* v6.42 */
 }
 function renTeacher(id, v){ S.teachers.forEach(function(t){ if (t.id === id) t.name = v; }); save(); render(); }
 function setEtat(id, v){ S.teachers.forEach(function(t){ if (t.id === id) t.etat = Math.max(0, Math.min(40, parseInt(v) || 0)); }); save(); render(); } /* v6.51 */
 function setNorm(id, v){ S.classes.forEach(function(c){ if (c.id === id) c.norm = Math.max(0, Math.min(60, parseInt(v) || 0)); }); save(); render(); } /* v6.51 */
 function renShort(id, v){ S.teachers.forEach(function(t){ if (t.id === id) t.short = v; }); save(); render(); }
+function clearShorts(){ /* v6.61: zeruje pola „skrót” — plan wraca do automatycznych inicjałów BM wszędzie */
+  if (!confirm("Wyzerować pola „skrót” wszystkich nauczycieli? Plan użyje automatycznych inicjałów.")) return;
+  S.teachers.forEach(function(t){ t.short = ""; }); save(); render();
+}
 function delTeacher(id){
   if (S.activities.some(function(a){ return a.teacherId === id; })){ flash("Nie można usunąć — nauczyciel ma zajęcia.", "err"); return; }
   S.teachers = S.teachers.filter(function(t){ return t.id !== id; });
@@ -2884,7 +2910,7 @@ function doImport(){
     var t = null;
     if (r.teacher){
       S.teachers.forEach(function(x){ if (!t && samePerson(x.name, r.teacher)) t = x; });
-      if (!t){ t = { id: nextId(S.teachers, "t"), name: r.teacher, short: r.short || r.teacher.split(/\s+/).slice(-1)[0].slice(0, 3), unavail: [], unavailWhy: {} }; S.teachers.push(t); addedT++; } /* v6.42 */
+      if (!t){ t = { id: nextId(S.teachers, "t"), name: r.teacher, short: r.short || "", unavail: [], unavailWhy: {} }; S.teachers.push(t); addedT++; } /* v6.42; v6.61: pusty skrót → auto inicjały BM */
     }
     var names = (r.classNames && r.classNames.length ? r.classNames : [r.className]);
     var clsIds = [];
@@ -3917,13 +3943,12 @@ function downloadDocx(){
   flash("📄 Zapisano plik .docx — otworzysz go w Wordzie.", "ok");
 }
 /* ==================== v6.18: zbiorcza plansza tygodnia ==================== */
-function teacherInits(onlyUsed){ /* v6.25: konflikty inicjałów liczone TYLKO wśród pokazanych nauczycieli (used); wydłużenie skrótu maks. do 4 znaków; nierozróżnialne nazwiska (np. identyczne) zostają przy 2-znakowej bazie — skrót nigdy nie ciągnie całego nazwiska (przy dwóch osobach "B. P." obie zostają "BP") */
-  function words(n){ return String(n || "").replace(/\./g, " ").split(/\s+/).filter(Boolean); }
-  function surOf(w){ return w.length >= 2 ? w[w.length - 1] : (w[0] || ""); }
-  var map = {}, byBase = {};
+function teacherInits(onlyUsed){ /* v6.25: konflikty liczone TYLKO wśród pokazanych (onlyUsed); wydłużenie maks. do 4 znaków; nierozróżnialne zostają przy 2-znakowej bazie. v6.61: nameParts — poprawne inicjały przy mieszanych formatach; baza = inicjał imienia + inicjał nazwiska, kolizja → inicjał imienia + kolejne litery nazwiska */
+  var map = {}, byBase = {}, parts = {};
   S.teachers.forEach(function(t){
-    var w = words(t.name);
-    var b = w.length >= 2 ? w[0][0].toUpperCase() + w[w.length - 1][0].toUpperCase() : (w.length ? w[0].slice(0, 2).toUpperCase() : "??");
+    var p = nameParts(t.name);
+    parts[t.id] = p;
+    var b = !p.imie ? "??" : (p.single ? p.imie.slice(0, 2).toUpperCase() : p.imie[0].toUpperCase() + p.nazwisko[0].toUpperCase());
     map[t.id] = b;
     if (!onlyUsed || onlyUsed[t.id]) (byBase[b] = byBase[b] || []).push(t);
   });
@@ -3934,15 +3959,12 @@ function teacherInits(onlyUsed){ /* v6.25: konflikty inicjałów liczone TYLKO w
     while (len <= 4){
       var seen = {};
       ok = true;
-      g.forEach(function(t){
-        var s = surOf(words(t.name)).slice(0, len).toUpperCase();
-        if (seen[s]) ok = false; else seen[s] = true;
-      });
+      g.forEach(function(t){ var s = parts[t.id].nazwisko.slice(0, len).toUpperCase(); if (seen[s]) ok = false; else seen[s] = true; });
       if (ok) break;
       len++;
     }
     if (!ok) return; /* nierozróżnialne prefiksy (np. identyczne nazwiska) — zostaje krótka baza */
-    g.forEach(function(t){ map[t.id] = words(t.name)[0][0].toUpperCase() + surOf(words(t.name)).slice(0, len); });
+    g.forEach(function(t){ map[t.id] = parts[t.id].imie[0].toUpperCase() + parts[t.id].nazwisko.slice(0, len); });
   });
   return map;
 }
