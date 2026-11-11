@@ -164,7 +164,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.53.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.54.</footer>
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -3306,11 +3306,13 @@ function renderPlan(){
   viewSel = eff;
   h += '<select class="inp" onchange="setViewSel(this.value)">' + ents.map(function(e){ return '<option value="' + e.id + '"' + (e.id === eff ? " selected" : "") + ">" + esc(e.name) + "</option>"; }).join("") + "</select>";
   if (S.settings.weekAB){ h += '<select class="inp" onchange="planWeek=this.value;render()"><option value="A"' + (planWeek === "A" ? " selected" : "") + '>Tydzień A</option><option value="B"' + (planWeek === "B" ? " selected" : "") + '>Tydzień B</option></select>'; } /* v6.35 */
+  var wNow = weekDates(planMonday || mondayOf(new Date()));
   h += '<span class="lbl" style="margin-left:8px">Tydzień:</span>';
   h += '<button class="btn2" onclick="planWeekNav(-7)">◀</button>';
-  h += '<input type="date" class="inp" style="width:150px" value="' + isoDate(planMonday || mondayOf(new Date())) + '" onchange="planWeekSet(this.value)">';
+  h += '<input type="date" class="inp" style="width:150px" value="' + wNow[0] + '" onchange="planWeekSet(this.value)" title="poniedziałek tygodnia">';
   h += '<button class="btn2" onclick="planWeekNav(7)">▶</button>';
   h += '<button class="btn2" onclick="planWeekToday()">Dziś</button>';
+  h += '<span class="badge">' + wNow[0].slice(5) + ' – ' + wNow[4].slice(5) + '</span>';
   if (!(S.settings.holidays || []).length) h += '<span class="hint">Brak dni wolnych — wczytaj listę w ⛔ Ograniczenia → 📅 Dni wolne.</span>'; /* v6.53 */
   h += '<button class="btn" onclick="runAuto()">🪄 Wygeneruj automatycznie</button>';
   h += '<button class="btn2" onclick="confirmClick(\'plan\',clearPlan)">' + (confirmKey === "plan" ? "Na pewno wyczyścić?" : "🧹 Wyczyść plan") + "</button>";
