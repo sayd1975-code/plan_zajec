@@ -164,7 +164,7 @@ html.dark tr.rwr{background:#43290b}
 </header>
 <div id="msg"></div>
 <main id="main"></main>
-<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.54.</footer>
+<footer>Dane zapisują się automatycznie w tej przeglądarce (localStorage) — nic nie jest wysyłane na serwer. Wersja 6.55.
 <script>
 "use strict";
 /* ==================== stałe, stan ==================== */
@@ -3285,10 +3285,11 @@ function unassign(id, ev){
   flash(L0 && L0.link ? "Powiązane lekcje wróciły do nieprzypisanych." : "Lekcja wróciła do nieprzypisanych.", "ok");
 }
 var planWeek = "A"; /* v6.35: aktywny tydzień w widoku planu */
-var planMonday = null; /* v6.52: poniedziałek aktualnie pokazywanego tygodnia (Date) — null = bieżący tydzień */
-function planWeekSet(v){ var dt = parseIso(v); if (dt) planMonday = mondayOf(dt); render(); } /* v6.52 */
-function planWeekNav(n){ var base = planMonday || mondayOf(new Date()); planMonday = addDays(base, n); render(); }
-function planWeekToday(){ planMonday = null; render(); }
+var planDay = null; /* v6.55: wybrana data (Date) — null = dziś; plan pokazuje tydzień tej daty, pole daty pokazuje tę datę */
+function planWeekMonday(){ return mondayOf(planDay || new Date()); }
+function planWeekSet(v){ var dt = parseIso(v); if (dt) planDay = dt; render(); } /* v6.55: bez snapania do poniedziałku */
+function planWeekNav(n){ var base = planDay || new Date(); planDay = addDays(base, n); render(); }
+function planWeekToday(){ planDay = null; render(); }
 function renderPlan(){
   var ls = lessons(planWeek), placement = S.placement;
   var unplaced = ls.filter(function(l){ return placement[l.id] == null; });
@@ -3306,10 +3307,11 @@ function renderPlan(){
   viewSel = eff;
   h += '<select class="inp" onchange="setViewSel(this.value)">' + ents.map(function(e){ return '<option value="' + e.id + '"' + (e.id === eff ? " selected" : "") + ">" + esc(e.name) + "</option>"; }).join("") + "</select>";
   if (S.settings.weekAB){ h += '<select class="inp" onchange="planWeek=this.value;render()"><option value="A"' + (planWeek === "A" ? " selected" : "") + '>Tydzień A</option><option value="B"' + (planWeek === "B" ? " selected" : "") + '>Tydzień B</option></select>'; } /* v6.35 */
-  var wNow = weekDates(planMonday || mondayOf(new Date()));
+  var wNow = weekDates(planWeekMonday());
+  var dayNow = isoDate(planDay || new Date()); /* v6.55: pokazujemy wybraną datę, nie poniedziałek */
   h += '<span class="lbl" style="margin-left:8px">Tydzień:</span>';
   h += '<button class="btn2" onclick="planWeekNav(-7)">◀</button>';
-  h += '<input type="date" class="inp" style="width:150px" value="' + wNow[0] + '" onchange="planWeekSet(this.value)" title="poniedziałek tygodnia">';
+  h += '<input type="date" class="inp" style="width:150px" value="' + dayNow + '" onchange="planWeekSet(this.value)" title="data — plan pokazuje jej tydzień">';
   h += '<button class="btn2" onclick="planWeekNav(7)">▶</button>';
   h += '<button class="btn2" onclick="planWeekToday()">Dziś</button>';
   h += '<span class="badge">' + wNow[0].slice(5) + ' – ' + wNow[4].slice(5) + '</span>';
@@ -3346,7 +3348,7 @@ function renderPlan(){
   for (var i = 0; i < NH; i++) h += "<th>lek. " + (i + 1) + "<br><span class='sub'>" + esc(lt[i]) + "</span></th>";
   h += "</tr>";
   for (var d = 0; d < 5; d++){
-    var wdates = weekDates(planMonday || mondayOf(new Date()));
+    var wdates = weekDates(planWeekMonday());
     var isoD = wdates[d], hol = isHoliday(isoD);
     h += '<tr><td class="day"' + (hol ? ' style="background:#fee2e2"' : '') + '>' + DAYS[d] + '<br><span class="sub">' + isoD.slice(5) + (hol ? ' 🎌 ' + esc(holidayName(isoD)) : '') + '</span><br><span class="sub' + (dayLoads[d] > S.settings.classMaxPerDay ? " err" : "") + '">' + (hol ? "wolne" : dayLoads[d] + " lek.") + "</span></td>";
     for (var hh = 0; hh < NH; hh++){
@@ -4302,7 +4304,7 @@ function studentPrintHtml(sid){
   h += '<style>body{font-family:system-ui,sans-serif;margin:24px;color:#111} h1{font-size:20px;margin:0 0 2px} .sub{color:#555;font-size:13px;margin-bottom:14px} table{border-collapse:collapse;width:100%} th,td{border:1px solid #999;padding:5px 7px;font-size:12px;text-align:left} th{background:#f0f0f0} .p1{background:#fff3cd;font-weight:700} .sub2{color:#666;font-size:11px} @media print{ .bar{display:none} }</style></head><body>';
   h += '<div class="bar"><button onclick="window.print()">🖨️ DRUKUJ</button></div>';
   h += '<h1>Plan zajęć — ' + esc(name) + '</h1>';
-  var mondayP = planMonday || mondayOf(new Date());
+  var mondayP = planWeekMonday();
   var wdP = weekDates(mondayP);
   h += '<p class="sub">Klasa ' + esc(cls) + (c && c.roomId ? ' · sala ' + esc(roomName(c.roomId)) : '') + ' · tydzień ' + esc(planWeek) + ' (' + wdP[0] + ' – ' + wdP[4] + ') · wygenerowano ' + new Date().toLocaleDateString("pl-PL") + '</p>';
   h += '<table><tr><th>Godz.</th>';
